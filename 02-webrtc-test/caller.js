@@ -72,7 +72,7 @@ socket.on('received_ice_candidate', async message => {
 
 // Listen for connectionstatechange on the local RTCPeerConnection
 peerConnection.oniceconnectionstatechange = event => {
-    if (peerConnection.connectionState === 'connected') {
+    if (peerConnection.iceConnectionState === 'connected') {
         console.log('Ta-dah!');
     }
 };
