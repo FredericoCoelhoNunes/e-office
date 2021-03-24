@@ -1,6 +1,8 @@
 // Connect to socket.io server
 const socket = io('localhost:1313');
 
+// audio context to play the sounds
+const audioContext = new window.AudioContext();
 
 // STUN configuration: these are free servers provided for example by Google that allow each peer
 // to get some ICE candidates
@@ -18,10 +20,11 @@ const configuration = {
     ]
 };
 const peerConnection = new RTCPeerConnection(configuration);
+
 const USER_ID = Math.floor(Math.random() * 100); 
 // ROOM_ID comes from another script on the .ejs file
 
-
+// Gets microphone
 var getMedia = async (constraints) => {
     let stream = null;
     stream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -30,56 +33,60 @@ var getMedia = async (constraints) => {
 
 // Connects to the SFU (selective forwarding unit) WebRTC server.
 var connectToSFUWebRTCServer = async (stream) => {
-
-    // When the server answer, set remote session description.
-    socket.on('server-webrtc-answer', async message => {
-        if (message.answer) {
-            console.log('Got server WebRTC answer. Setting remote session description.');
-            const remoteDesc = new RTCSessionDescription(message.answer);
-            await peerConnection.setRemoteDescription(remoteDesc);
-        }
-    });
-
     // Adding audio track to WebRTC connection.
-    peerConnection.addTrack(stream.getTracks()[0]);
-    const offer = await peerConnection.createOffer();
-    await peerConnection.setLocalDescription(offer);
-    socket.emit('client-webrtc-offer', USER_ID, ROOM_ID, {'offer': offer});
-    console.log('Sent a WebRTC connection offer to the server.');
+    // Triggers the onnegotiationneeded event 
+    peerConnection.addTrack(stream.getTracks()[0]);    
 }
 
 // Listen for local ICE candidates on the local RTCPeerConnection
-peerConnection.onicecandidate = event => {
-    if (event.candidate) {
-        console.log('Got new local ICE candidate. Sending to server.');
-        socket.emit('client-new-ice-candidate', USER_ID, ROOM_ID, {'candidate': event.candidate});
-    }
-};
+peerConnection.onicecandidate = ({candidate}) => socket.emit('webrtc-message', {userId: USER_ID, roomId: ROOM_ID, data: {"candidate": candidate}});
 
-// Listen for remote ICE candidates and add them to the local RTCPeerConnection
-socket.on('server-new-ice-candidate', async message => {
-    if (message.candidate) {
-        try {
-            console.log('Got new server ICE candidate.');
-            await peerConnection.addIceCandidate(message.candidate);
-        } catch (e) {
-            console.error('Error adding received ice candidate', e);
+// Handles negotiation
+peerConnection.onnegotiationneeded = async () => {
+    console.log('Starting negotiation.')
+    await peerConnection.setLocalDescription(await peerConnection.createOffer());
+    socket.emit('webrtc-message', {userId: USER_ID, roomId: ROOM_ID, data: {"description": peerConnection.localDescription}});
+    console.log('Sent a WebRTC connection offer to the server.');
+}
+
+socket.on('webrtc-message', async ({description, candidate}) => {
+    if (description) {
+        await peerConnection.setRemoteDescription(description);
+        if (description.type == "offer") {
+            await peerConnection.setLocalDescription(await peerConnection.createAnswer());
+            socket.emit('webrtc-message', {userId: USER_ID, roomId: ROOM_ID, data: {"description": peerConnection.localDescription}});
         }
-    }
-});
+    } else if (candidate) await peerConnection.addIceCandidate(candidate);
+  }
+)
 
 // Listen for connectionstatechange on the local RTCPeerConnection
 peerConnection.oniceconnectionstatechange = event => {
     if (peerConnection.iceConnectionState === 'connected') {
         console.log('Connected to server!');
+        console.log(peerConnection.getTransceivers()[0]);
     }
 };
 
+// New user joins a room
+socket.on('user-joined-room', userId => {
+    console.log(`User ${userId} joined the room.`);
+});
 
+// Sending message: joined the server
+socket.emit('user-joined-room', USER_ID);
+
+// Signals when a new track is added.
+peerConnection.ontrack = () => {
+    console.log('Track added from server!');
+    var mediaStream = new MediaStream([peerConnection.getReceivers()[0].track]);
+    var streamSource = audioContext.createMediaStreamSource(mediaStream);
+    streamSource.connect(audioContext.destination);
+    console.log(peerConnection.getTransceivers()[0]);
+}
+
+// Getting media and connecting to server.
 getMedia({audio: true, video: false}).then(
     connectToSFUWebRTCServer
 )
-
 console.log(`Welcome to room ${ROOM_ID}. You are user ${USER_ID}.`);
-
-    

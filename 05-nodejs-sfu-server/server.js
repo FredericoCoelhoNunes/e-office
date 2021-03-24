@@ -1,3 +1,34 @@
+// TODO
+//   - separate addStreams logic by room
+//   - Figure this out: 
+//       - addTrack triggers renegotiation.
+//       - Renegotiation (on success) triggers onicestatechange.
+//       - onicestatechange triggers addTrack (etc.). 
+
+// Test: records audio stream as an mp3
+// const { PassThrough } = require('stream')
+// const { RTCAudioSink, RTCVideoSink } = require('wrtc').nonstandard;
+// const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
+// const ffmpeg = require('fluent-ffmpeg');
+// ffmpeg.setFfmpegPath(ffmpegPath);
+// const { StreamInput } = require('fluent-ffmpeg-multistream')
+
+// const stream = {
+//     recordPath: './recording.mp3',
+//     audio: new PassThrough()
+// };
+
+// const onAudioData = ({ samples: { buffer } }) => {
+//     console.log('got some audio data')
+//     if (!stream.end) {
+//         stream.audio.push(Buffer.from(buffer));
+//     }
+// };
+//
+
+const wapi = require('web-audio-api');  
+const util = require('util')
+
 const { Server } = require('engine.io');
 const express = require('express');
 const app = express();
@@ -34,59 +65,109 @@ app.get('/:room', (req, res) => {
 
 
 // Function to add a new peer connection with a client.
-var addPeerConnection = (peerConnections, userId, message, offer, configuration) => {
+var addPeerConnection = (userId, socket) => {
     console.log(`Adding peer connection for user ${userId}`);
     peerConnections[userId] = new wrtc.RTCPeerConnection(configuration);
-    peerConnections[userId].setRemoteDescription(new wrtc.RTCSessionDescription(message.offer));
+    
+    attachNegotiationEventHandler(peerConnections[userId], socket)
+    attachOnIceCandidateEventHandler(peerConnections[userId], socket);
+    attachOnSuccessfulConnectionEventHandler(peerConnections[userId], userId, socket);
 };
 
 
-// Creates and sends a WebRTC answer to a client.
-var createAndSendAnswerToClient = async (peerConnections, userId, socket) => {
-    console.log(`Sending answer to user ${userId}`);
-    const answer = await peerConnections[userId].createAnswer();
-    await peerConnections[userId].setLocalDescription(answer);
-    socket.emit('server-webrtc-answer', {'answer': answer});
+// Attaches event handler for the onicecandidate event
+var attachOnIceCandidateEventHandler = (peerConnection, socket) => {
+    peerConnection.onicecandidate = ({candidate}) => socket.emit('webrtc-message', {candidate});
 }
 
-// Attaches event handler for the onicecandidate event - send this ICE csndidate to the "caller" socket
-var attachOnIceCandidateEventHandler = (peerConnections, userId, socket) => {
-    peerConnections[userId].onicecandidate = event => {
-        if (event.candidate) {
-            console.log(`Got new local ICE candidate. Sending to user ${userId}`);
-            socket.emit('server-new-ice-candidate', {'candidate': event.candidate});
+
+// Whenever a new connection is successful, we want to direct all streams from other users to it,
+// as well as direct its stream to other users.
+var attachOnSuccessfulConnectionEventHandler = (peerConnection, userId, socket) => {
+    peerConnection.oniceconnectionstatechange = event => {
+        if (peerConnection.iceConnectionState === 'connected') {
+            console.log(`User ${userId} successfully connected!`);
+
+            // This is what I want: adding each user's tracks to each other's peer connection's with the server.
+            addTracks(peerConnections, userId);
+
+            // Test: this records the audio from 1 client as local mp3 file. Just to make sure the server is receiving the stream.
+            // var track = peerConnections[userId].getReceivers()[0].track;
+            // const audioSink = new RTCAudioSink(track);
+            // audioSink.addEventListener('data', onAudioData);
+            // stream.audio.on('end', () => {
+            //     audioSink.removeEventListener('data', onAudioData);
+            // });
+
+            // stream.proc = ffmpeg()
+            //     .addInput((new StreamInput(stream.audio)).url)
+            //     .addInputOptions([
+            //         '-f s16le',
+            //         '-ar 48k',
+            //         '-ac 1',
+            //         ])
+            //     .on('start', ()=>{
+            //         console.log('Start recording >> ', stream.recordPath)
+            //     })
+            //     .on('end', ()=>{
+            //         stream.recordEnd = true;
+            //         console.log('Stop recording >> ', stream.recordPath)
+            //     })
+            //     .output(stream.recordPath);
+
+            // stream.proc.run();
+            //
+        }
+    }
+};
+
+// Adds every other user's tracks to a new user, and vice versa
+var addTracks = (peerConnections, userId) => {
+    for (const otherUserId in peerConnections) {
+        if (otherUserId != userId) {
+            addUserTrackToDestinationStream(peerConnections, userId, otherUserId);
+            addUserTrackToDestinationStream(peerConnections, otherUserId, userId);
         }
     }
 }
-
-// Handles a new incoming ICE candidate
-var handleNewICECandidate = async (peerConnections, userId, message) => {
+// The actual function logic that adds a user's track to another user's stream
+var addUserTrackToDestinationStream = (peerConnections, sourceUser, destinationUser) => {
+    console.log(`Adding user ${sourceUser}'s track to user ${destinationUser}'s stream.`)
     try {
-        console.log(`Got new remote ICE candidate from user ${userId}`);
-        await peerConnections[userId].addIceCandidate(message.candidate);
+        peerConnections[destinationUser].addTrack(peerConnections[sourceUser].getReceivers()[0].track);
+        console.log(`Successfully added user ${sourceUser}'s track to user ${destinationUser}'s stream.`);
     } catch (e) {
-        console.error('Error adding received ice candidate', e);
+        console.log(e)
     }
 };
 
+// Handles renegotiation (necessary every time a track is added)
+var attachNegotiationEventHandler = async (peerConnection, socket) => {
+    peerConnection.onnegotiationneeded = async () => {
+        await peerConnection.setLocalDescription(await peerConnection.createOffer());
+        socket.emit('webrtc-message', {'description': peerConnection.localDescription});
+    }
+};
 
 // socket.io server.
 io.on('connection', socket => {
 
-    // Defining what to do when a client tries to connect.
-    socket.on('client-webrtc-offer', (userId, roomId, message) => {
-        if (message.offer) {
-            addPeerConnection(peerConnections, userId, message, message.offer, configuration);
-            attachOnIceCandidateEventHandler(peerConnections, userId, socket);
-            createAndSendAnswerToClient(peerConnections, userId, socket);            
-        }
+    // Notifying all users that a new user joined
+    socket.on('user-joined-room', (userId, roomId) => {
+        socket.join(roomId);
+        socket.to(roomId).emit('user-joined-room', userId);
+        addPeerConnection(userId, socket);
     });
 
-    // New ice-candidate from client.
-    socket.on('client-new-ice-candidate', (userId, roomId, message) => {
-        if (message.candidate) {
-            handleNewICECandidate(peerConnections, userId, message)
-        }
+    // Connecting to client
+    socket.on('webrtc-message', async ({userId, roomId, data}) => {
+        if (data.description) {
+            await peerConnections[userId].setRemoteDescription(data.description);
+            if (data.description.type == "offer") {
+              await peerConnections[userId].setLocalDescription(await peerConnections[userId].createAnswer());
+              socket.emit('webrtc-message', {description: peerConnections[userId].localDescription});
+            }
+        } else if (data.candidate && data.candidate.candidate != "") await peerConnections[userId].addIceCandidate(data.candidate);
     });
 })
 
