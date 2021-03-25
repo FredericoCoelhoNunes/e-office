@@ -24,8 +24,11 @@ const peerConnection = new RTCPeerConnection(configuration);
 const USER_ID = Math.floor(Math.random() * 100); 
 // ROOM_ID comes from another script on the .ejs file
 
-// Tracks what track belongs to which user
-let userIdTrackIdMatches = {};
+// Tracks which stream belongs to which user
+let userIdStreamIdMatches = {};
+
+// Gain Nodes - tracks the gain nodes corresponding to each stream
+let gainNodes = {};
 
 // Gets microphone
 var getMedia = async (constraints) => {
@@ -50,8 +53,8 @@ socket.on('user-joined-room', userId => {
 socket.emit('user-joined-room', USER_ID);
 
 // New userId/trackId match received
-socket.on('userid-trackid-match', (userId, trackId) => {
-    userIdTrackIdMatches[userId] = trackId;
+socket.on('userid-streamid-match', (userId, streamId) => {
+    userIdStreamIdMatches[userId] = streamId;
 });
 
 // Listen for local ICE candidates on the local RTCPeerConnection
@@ -84,11 +87,14 @@ peerConnection.oniceconnectionstatechange = event => {
 };
 
 // Signals when a new track is added.
-peerConnection.ontrack = () => {
+peerConnection.ontrack = (event) => {
     console.log('Track added from server!');
-    var mediaStream = new MediaStream([peerConnection.getReceivers()[0].track]);
+    console.log(event.streams[0].id)
+    var mediaStream = new MediaStream([event.track]);
     var streamSource = audioContext.createMediaStreamSource(mediaStream);
-    streamSource.connect(audioContext.destination);
+    gainNodes[event.streams[0].id] = audioContext.createGain();
+    streamSource.connect(gainNodes[event.streams[0].id]);
+    gainNodes[event.streams[0].id].connect(audioContext.destination);
 }
 
 // Getting media and connecting to server.

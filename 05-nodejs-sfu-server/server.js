@@ -14,7 +14,9 @@ app.use(express.static("public"))
 
 // Object to store client WebRTC connections
 let peerConnections = {};
-let audioConnections = [];
+
+// Socket IDs
+let sockets = {};
 
 // STUN server configuration
 const configuration = {
@@ -43,7 +45,8 @@ var addPeerConnection = (userId, roomId, socket) => {
     
     attachNegotiationEventHandler(peerConnections[userId], socket)
     attachOnIceCandidateEventHandler(peerConnections[userId], socket);
-    attachOnSuccessfulConnectionEventHandler(peerConnections[userId], userId, roomId, socket);
+    attachOnSuccessfulConnectionEventHandler(peerConnections[userId], userId);
+    attachOnTrackEventHandler(peerConnections[userId], userId, roomId, socket);
 };
 
 
@@ -53,69 +56,72 @@ var attachOnIceCandidateEventHandler = (peerConnection, socket) => {
 }
 
 
-// Whenever a new connection is successful, we want to direct all streams from other users to it,
-// as well as direct its stream to other users.
-var attachOnSuccessfulConnectionEventHandler = (peerConnection, userId, roomId, socket) => {
+// Connection successful
+var attachOnSuccessfulConnectionEventHandler = (peerConnection, userId) => {
     peerConnection.oniceconnectionstatechange = event => {
         if (peerConnection.iceConnectionState === 'connected') {
             console.log(`User ${userId} successfully connected!`);
-
-            // Adding each user's tracks to each other's peer connection's with the server.
-            addTracks(peerConnections, userId);
-
-            // Update all users's (trackId,userId) matches
-            updateUserTrackMatches(peerConnection, userId, roomId, socket);
         }
     }
 };
 
-// Update all users matches of (userId, trackId), so that volume can be tuned for each track
-// This doesn't work: track ID isn't the same on sending/receiving end.
-// Doing it in order, and hoping the ontrack events also triggered in the same order...
-var updateUserTrackMatches = (peerConnection, userId, roomId, socket) => {
-    // try {
-    //     var newTrackId = peerConnections[userId].getTransceivers()[0].mid;
-    //     socket.to(roomId).emit('userid-trackid-match', userId, newTrackId);
-    // } catch (err) {
-    //     console.log(err);
-    // }
-    // for (let otherUserId in peerConnections) {
-    //     if (otherUserId != userId) {
-    //         var trackId = peerConnections[otherUserId].getTransceivers()[0].mid;
-    //         // socket.emit('userid-trackid-match', userId, trackId);
-    //     }
-    // }
+// Whenever a new track is received, we want to direct it to all other peers
+var attachOnTrackEventHandler = (peerConnection, userId, roomId, socket) => {
+    peerConnection.ontrack = event => {
+        // Adding each user's tracks to each other's peer connection's with the server.
+        userIdStreamIdMatches = addTracks(peerConnections, userId);
+        console.log(userIdStreamIdMatches);
+        // Update all users's (trackId,userId) matches
+        updateUserIdStreamIdMatches(userIdStreamIdMatches);
+    }
+}
+
+// Update all matches of (userId, transceiverMid). Can't use trackId as it is not the same on both ends.
+// Transciever Mid seems to be guaranteed to keep the order in which it was added.
+var updateUserIdStreamIdMatches = (userIdStreamIdMatches) => {
+    for (var {user, sourceUser, streamId} of userIdStreamIdMatches) {
+        sockets[user].emit('userid-streamid-match', sourceUser, streamId);
+    }
 };
 
 // Adds every other user's tracks to a new user, and vice versa
 var addTracks = (peerConnections, userId) => {
+    let userIdStreamIdMatches = [];
+    let streamId;
     for (const otherUserId in peerConnections) {
         if (otherUserId != userId) {
-            addUserTrackToDestinationStream(peerConnections, userId, otherUserId);
-            addUserTrackToDestinationStream(peerConnections, otherUserId, userId);
+            streamId = addUserTrackToDestinationStream(peerConnections, userId, otherUserId);
+            if (streamId) userIdStreamIdMatches.push({"user": otherUserId, "sourceUser": userId, "streamId": streamId});  // this means: on the "user" client, the stream that comes from "sourceUser" has ID "streamId"
+
+            streamId = addUserTrackToDestinationStream(peerConnections, otherUserId, userId);
+            if (streamId) userIdStreamIdMatches.push({"user": userId, "sourceUser": otherUserId, "streamId": streamId}); 
         }
     }
+    return userIdStreamIdMatches
 }
 // The actual function logic that adds a user's track to another user's stream.
 // Also sends a notification to the user with (trackId, sourceUser) so the volume can be tuned on client-side
-// Note: track ID is not the same on both ends... no idea how we can match each track to the source user on client side.
 var addUserTrackToDestinationStream = (peerConnections, sourceUser, destinationUser) => {
     console.log(`Adding user ${sourceUser}'s track to user ${destinationUser}'s stream.`)
     try {
-        //peerConnections[destinationUser].addTrack(peerConnections[sourceUser].getReceivers()[0].track);
-        if (~areConnected(sourceUser, destinationUser)) {
-            peerConnections[destinationUser].addTransceiver(
-                peerConnections[sourceUser].getReceivers()[0].track
-            );
-            audioConnections.push([sourceUser, destinationUser])
-        }
+        var stream = new wrtc.MediaStream();
+        var streamId = stream.id;
+
+        // TODO: Not sure if this is a good way to do it, but I am trying to force each track to be on an individual stream.
+        // This is because stream.id was the ONLY id I could find that is common between peers.
+        // If there's a way to do this with addTrack only, would be better.
+        const transceiver = peerConnections[destinationUser].addTransceiver(
+            peerConnections[sourceUser].getReceivers()[0].track,
+            {streams: [stream]}
+        );
+        
+        return streamId
+        
         console.log(`Successfully added user ${sourceUser}'s track to user ${destinationUser}'s stream.`);
     } catch (e) {
         console.log(e)
     }
 };
-
-// Checks if two clients have already shared tracks
 
 // Handles renegotiation (necessary every time a track is added)
 var attachNegotiationEventHandler = async (peerConnection, socket) => {
@@ -131,6 +137,7 @@ io.on('connection', socket => {
     // Notifying all users that a new user joined
     socket.on('user-joined-room', (userId, roomId) => {
         socket.join(roomId);
+        sockets[userId] = socket;
         socket.to(roomId).emit('user-joined-room', userId);
         addPeerConnection(userId, roomId, socket);
     });
