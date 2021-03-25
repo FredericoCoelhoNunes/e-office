@@ -1,34 +1,3 @@
-// TODO
-//   - separate addStreams logic by room
-//   - Figure this out: 
-//       - addTrack triggers renegotiation.
-//       - Renegotiation (on success) triggers onicestatechange.
-//       - onicestatechange triggers addTrack (etc.). 
-
-// Test: records audio stream as an mp3
-// const { PassThrough } = require('stream')
-// const { RTCAudioSink, RTCVideoSink } = require('wrtc').nonstandard;
-// const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
-// const ffmpeg = require('fluent-ffmpeg');
-// ffmpeg.setFfmpegPath(ffmpegPath);
-// const { StreamInput } = require('fluent-ffmpeg-multistream')
-
-// const stream = {
-//     recordPath: './recording.mp3',
-//     audio: new PassThrough()
-// };
-
-// const onAudioData = ({ samples: { buffer } }) => {
-//     console.log('got some audio data')
-//     if (!stream.end) {
-//         stream.audio.push(Buffer.from(buffer));
-//     }
-// };
-//
-
-const wapi = require('web-audio-api');  
-const util = require('util')
-
 const { Server } = require('engine.io');
 const express = require('express');
 const app = express();
@@ -90,33 +59,6 @@ var attachOnSuccessfulConnectionEventHandler = (peerConnection, userId, socket) 
 
             // This is what I want: adding each user's tracks to each other's peer connection's with the server.
             addTracks(peerConnections, userId);
-
-            // Test: this records the audio from 1 client as local mp3 file. Just to make sure the server is receiving the stream.
-            // var track = peerConnections[userId].getReceivers()[0].track;
-            // const audioSink = new RTCAudioSink(track);
-            // audioSink.addEventListener('data', onAudioData);
-            // stream.audio.on('end', () => {
-            //     audioSink.removeEventListener('data', onAudioData);
-            // });
-
-            // stream.proc = ffmpeg()
-            //     .addInput((new StreamInput(stream.audio)).url)
-            //     .addInputOptions([
-            //         '-f s16le',
-            //         '-ar 48k',
-            //         '-ac 1',
-            //         ])
-            //     .on('start', ()=>{
-            //         console.log('Start recording >> ', stream.recordPath)
-            //     })
-            //     .on('end', ()=>{
-            //         stream.recordEnd = true;
-            //         console.log('Stop recording >> ', stream.recordPath)
-            //     })
-            //     .output(stream.recordPath);
-
-            // stream.proc.run();
-            //
         }
     }
 };
@@ -134,7 +76,11 @@ var addTracks = (peerConnections, userId) => {
 var addUserTrackToDestinationStream = (peerConnections, sourceUser, destinationUser) => {
     console.log(`Adding user ${sourceUser}'s track to user ${destinationUser}'s stream.`)
     try {
-        peerConnections[destinationUser].addTrack(peerConnections[sourceUser].getReceivers()[0].track);
+        var stream = peerConnections[sourceUser].getReceivers()[0];
+        var gainController = new MicGainController(stream);
+
+        peerConnections[destinationUser].addTrack(myStream.getReceivers()[0]);
+
         console.log(`Successfully added user ${sourceUser}'s track to user ${destinationUser}'s stream.`);
     } catch (e) {
         console.log(e)
