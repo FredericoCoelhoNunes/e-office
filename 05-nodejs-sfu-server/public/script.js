@@ -24,6 +24,9 @@ const peerConnection = new RTCPeerConnection(configuration);
 const USER_ID = Math.floor(Math.random() * 100); 
 // ROOM_ID comes from another script on the .ejs file
 
+// Tracks what track belongs to which user
+let userIdTrackIdMatches = {};
+
 // Gets microphone
 var getMedia = async (constraints) => {
     let stream = null;
@@ -37,6 +40,19 @@ var connectToSFUWebRTCServer = async (stream) => {
     // Triggers the onnegotiationneeded event 
     peerConnection.addTrack(stream.getTracks()[0]);    
 }
+
+// New user joins a room
+socket.on('user-joined-room', userId => {
+    console.log(`User ${userId} joined the room.`);
+});
+
+// Sending message: joined the server
+socket.emit('user-joined-room', USER_ID);
+
+// New userId/trackId match received
+socket.on('userid-trackid-match', (userId, trackId) => {
+    userIdTrackIdMatches[userId] = trackId;
+});
 
 // Listen for local ICE candidates on the local RTCPeerConnection
 peerConnection.onicecandidate = ({candidate}) => socket.emit('webrtc-message', {userId: USER_ID, roomId: ROOM_ID, data: {"candidate": candidate}});
@@ -64,17 +80,8 @@ socket.on('webrtc-message', async ({description, candidate}) => {
 peerConnection.oniceconnectionstatechange = event => {
     if (peerConnection.iceConnectionState === 'connected') {
         console.log('Connected to server!');
-        console.log(peerConnection.getTransceivers()[0]);
     }
 };
-
-// New user joins a room
-socket.on('user-joined-room', userId => {
-    console.log(`User ${userId} joined the room.`);
-});
-
-// Sending message: joined the server
-socket.emit('user-joined-room', USER_ID);
 
 // Signals when a new track is added.
 peerConnection.ontrack = () => {
@@ -82,7 +89,6 @@ peerConnection.ontrack = () => {
     var mediaStream = new MediaStream([peerConnection.getReceivers()[0].track]);
     var streamSource = audioContext.createMediaStreamSource(mediaStream);
     streamSource.connect(audioContext.destination);
-    console.log(peerConnection.getTransceivers()[0]);
 }
 
 // Getting media and connecting to server.
