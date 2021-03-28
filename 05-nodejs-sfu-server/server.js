@@ -1,11 +1,8 @@
-const { Server } = require('engine.io');
 const express = require('express');
 const app = express();
 const server = require('http').Server(app);
 const io = require('socket.io')(server);  // all Websockets conections start with an HTTP request :-) 
 const wrtc = require("wrtc");
-
-let idx = 0;
 
 app.set('view engine', 'ejs');
 // Makes all files in this folder accessible by http (e.g. file public/script.js is accessible in server:port/script.js).

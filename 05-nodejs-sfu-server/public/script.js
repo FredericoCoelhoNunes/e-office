@@ -1,5 +1,5 @@
 // Connect to socket.io server
-const socket = io('localhost:1313');
+const socket = io('/');
 
 // audio context to play the sounds
 const audioContext = new window.AudioContext();
@@ -93,8 +93,10 @@ peerConnection.ontrack = (event) => {
     var mediaStream = new MediaStream([event.track]);
     var streamSource = audioContext.createMediaStreamSource(mediaStream);
     gainNodes[event.streams[0].id] = audioContext.createGain();
-    streamSource.connect(gainNodes[event.streams[0].id]);
+    streamSource.connect(gainNodes  [event.streams[0].id]);
     gainNodes[event.streams[0].id].connect(audioContext.destination);
+
+    // et voila :) gains are now controllable live with gainNodes[userIdStreamIdMatches[<some user ID>]].gain.value = <gain value>
 }
 
 // Getting media and connecting to server.
