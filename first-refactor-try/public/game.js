@@ -50,7 +50,7 @@ var game = new Phaser.Game(config);
 var getDistance = (x1, y1, x2, y2) => {
     var a = x1 - x2;
     var b = y1 - y2;
-    var distance = Math.sqrt( a*a + b*b );
+    var distance = Math.sqrt(a * a + b * b);
     return distance
 };
 
@@ -59,19 +59,19 @@ var calculateGain = (x1, y1, x2, y2) => {
     let distance = getDistance(x1, y1, x2, y2)
     let newGain;
     var maxDist = 250;
-   /* if (distance >= maxDist) {
-        newGain = 0;
-    } else {
-        newGain = 1 - (distance/maxDist);
-    } */
+    /* if (distance >= maxDist) {
+         newGain = 0;
+     } else {
+         newGain = 1 - (distance/maxDist);
+     } */
     //newGain = 1 - (distance/maxDist);
-    newGain = 1/(1+distance/10)
+    newGain = 1 / (1 + distance / 10)
     return newGain
 }
 
 var updateGain = (playerName, x, y) => {
-    
-    let newVal = calculateGain(player.x, player.y, x, y); 
+
+    let newVal = calculateGain(player.x, player.y, x, y);
 
     console.log(`New gain for user ${playerName} is ${newVal}`)
     try {
@@ -81,37 +81,43 @@ var updateGain = (playerName, x, y) => {
         console.log(userIdStreamIdMatches);
         console.log(gainNodes);
     }
-    
+
     // console.log(userIdStreamIdMatches);
     // console.log(gainNodes);
     // console.log(playerName, x, y);
 }
 
+// change name to "renderCoworker", get from Office
 function addPlayer(self, playerName, x, y) {
-    const playerSprite = self.add.sprite(x, y, 'person').setOrigin(0.5, 0.5);
+    //const playerSprite = self.add.sprite().setOrigin(0.5, 0.5);
     playerSprite.setScale(0.2);
-    players[playerName] = {sprite: playerSprite, x, y};
+    // players[playerName] = {
+    //     sprite: playerSprite,
+    //     x,
+    //     y
+    // };
 }
 
-function updatePosition(self, playerName, x, y) {
-    players[playerName].x = x;
-    players[playerName].y = y;
-    players[playerName].sprite.setPosition(x, y);
-}
+// function updatePosition(self, playerName, x, y) {
+//     players[playerName].x = x;
+//     players[playerName].y = y;
+//     players[playerName].sprite.setPosition(x, y);
+// }
 
-function preload ()
-{
+function preload() {
     this.load.image('person', 'assets/person.png');
 }
 
-function create ()
-{
+function create() {
     var self = this;
     this.socket = socket;
     this.playerName = USER_ID;
     console.log(USER_ID);
 
-    getMedia({audio: true, video: false}).then(
+    getMedia({
+        audio: true,
+        video: false
+    }).then(
         connectToSFUWebRTCServer
     )
 
@@ -123,9 +129,13 @@ function create ()
 
     this.socket.emit('new-player', this.playerName, player.x, player.y);
 
-    this.socket.on('new-player', ({playerName, x, y}) => {
+    this.socket.on('new-player', ({
+        playerName,
+        x,
+        y
+    }) => {
         console.log('got new player')
-        addPlayer(self, playerName, x, y);  
+        addPlayer(self, playerName, x, y);
     })
 
     this.socket.on('current-players', data => {
@@ -146,25 +156,18 @@ function create ()
 
 }
 
-function update ()
-{
+function update() {
     player.setVelocity(0);
 
-    if (cursors.left.isDown)
-    {
+    if (cursors.left.isDown) {
         player.setVelocityX(-300);
-    }
-    else if (cursors.right.isDown)
-    {
+    } else if (cursors.right.isDown) {
         player.setVelocityX(300);
     }
 
-    if (cursors.up.isDown)
-    {
+    if (cursors.up.isDown) {
         player.setVelocityY(-300);
-    }
-    else if (cursors.down.isDown)
-    {
+    } else if (cursors.down.isDown) {
         player.setVelocityY(300);
     }
 
@@ -172,7 +175,7 @@ function update ()
     var y = player.y;
     // var r = this.player.rotation;
 
-    if (oldPosition === undefined || (getDistance(oldPosition.x, oldPosition.y, x, y) > 10)) {        
+    if (oldPosition === undefined || (getDistance(oldPosition.x, oldPosition.y, x, y) > 10)) {
         // console.log('Is undefined: ', oldPosition === undefined);
         // if (oldPosition) console.log(oldPosition.x, oldPosition.y, x, y);
 
@@ -182,9 +185,9 @@ function update ()
         for (let [pname, pos] of Object.entries(players)) {
             updateGain(pname, pos.x, pos.y);
         }
-        
+
         // console.log('emited new position');
-        
+
         oldPosition = {
             "x": x,
             "y": y

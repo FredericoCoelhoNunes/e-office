@@ -10,49 +10,49 @@ const audioContext = new window.AudioContext();
 // with a remote device. When starting a WebRTC peer connection, typically a number of candidates are
 // proposed by each end of the connection, until they mutually agree upon one which describes the
 // connection they decide will be best. WebRTC then uses that candidate's details to initiate the connection."
-const configuration = {
-    'iceServers': [
-        {
-            'urls': [
-                'stun:stun.l.google.com:19302',
-            ]
-        }
-    ]
-};
-const peerConnection = new RTCPeerConnection(configuration);
+// const configuration = {
+//     'iceServers': [
+//         {
+//             'urls': [
+//                 'stun:stun.l.google.com:19302',
+//             ]
+//         }
+//     ]
+// };
+// const peerConnection = new RTCPeerConnection(configuration);
 
-function makeid(length) {
-    var result           = '';
-    var characters       = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    var charactersLength = characters.length;
-    for ( var i = 0; i < length; i++ ) {
-        result += characters.charAt(Math.floor(Math.random() * charactersLength));
-    }
-    return result;
-}
+// function makeid(length) {
+//     var result           = '';
+//     var characters       = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+//     var charactersLength = characters.length;
+//     for ( var i = 0; i < length; i++ ) {
+//         result += characters.charAt(Math.floor(Math.random() * charactersLength));
+//     }
+//     return result;
+// }
 
-const USER_ID = makeid(5); 
+// const USER_ID = makeid(5); 
 // ROOM_ID comes from another script on the .ejs file
 
 // Tracks which stream belongs to which user
-let userIdStreamIdMatches = {};
+// let userIdStreamIdMatches = {};
 
 // Gain Nodes - tracks the gain nodes corresponding to each stream
-let gainNodes = {};
+// let gainNodes = {};
 
 // Gets microphone
-var getMedia = async (constraints) => {
-    let stream = null;
-    stream = await navigator.mediaDevices.getUserMedia(constraints);
-    return stream;
-}
+// var getMedia = async (constraints) => {
+//     let stream = null;
+//     stream = await navigator.mediaDevices.getUserMedia(constraints);
+//     return stream;
+// }
 
 // Connects to the SFU (selective forwarding unit) WebRTC server.
-var connectToSFUWebRTCServer = async (stream) => {
-    // Adding audio track to WebRTC connection.
-    // Triggers the onnegotiationneeded event 
-    peerConnection.addTrack(stream.getTracks()[0]);    
-}
+// var connectToSFUWebRTCServer = async (stream) => {
+//     // Adding audio track to WebRTC connection.
+//     // Triggers the onnegotiationneeded event 
+//     peerConnection.addTrack(stream.getTracks()[0]);    
+// }
 
 // New user joins a room
 socket.on('user-joined-room', userId => {
@@ -68,59 +68,65 @@ socket.on('userid-streamid-match', (userId, streamId) => {
 });
 
 // Listen for local ICE candidates on the local RTCPeerConnection
-peerConnection.onicecandidate = ({candidate}) => socket.emit('webrtc-message', {userId: USER_ID, roomId: ROOM_ID, data: {"candidate": candidate}});
+// peerConnection.onicecandidate = ({candidate}) => socket.emit('webrtc-message', {userId: USER_ID, roomId: ROOM_ID, data: {"candidate": candidate}});
 
 // Handles negotiation
-peerConnection.onnegotiationneeded = async () => {
-    console.log('Starting negotiation.')
-    await peerConnection.setLocalDescription(await peerConnection.createOffer());
-    socket.emit('webrtc-message', {userId: USER_ID, roomId: ROOM_ID, data: {"description": peerConnection.localDescription}});
-    console.log('Sent a WebRTC connection offer to the server.');
-}
+// peerConnection.onnegotiationneeded = async () => {
+//     console.log('Starting negotiation.')
+//     await peerConnection.setLocalDescription(await peerConnection.createOffer());
+//     socket.emit('webrtc-message', {userId: USER_ID, roomId: ROOM_ID, data: {"description": peerConnection.localDescription}});
+//     console.log('Sent a WebRTC connection offer to the server.');
+// }
 
-socket.on('webrtc-message', async ({description, candidate}) => {
-    if (description) {
-        await peerConnection.setRemoteDescription(description);
-        if (description.type == "offer") {
-            await peerConnection.setLocalDescription(await peerConnection.createAnswer());
-            socket.emit('webrtc-message', {userId: USER_ID, roomId: ROOM_ID, data: {"description": peerConnection.localDescription}});
-        }
-    } else if (candidate) await peerConnection.addIceCandidate(candidate);
-  }
-)
+// socket.on('webrtc-message', async ({
+//     description,
+//     candidate
+// }) => {
+//     if (description) {
+//         await peerConnection.setRemoteDescription(description);
+//         if (description.type == "offer") {
+//             await peerConnection.setLocalDescription(await peerConnection.createAnswer());
+//             socket.emit('webrtc-message', {
+//                 userId: USER_ID,
+//                 roomId: ROOM_ID,
+//                 data: {
+//                     "description": peerConnection.localDescription
+//                 }
+//             });
+//         }
+//     } else if (candidate) await peerConnection.addIceCandidate(candidate);
+// })
 
 // Listen for connectionstatechange on the local RTCPeerConnection
-peerConnection.oniceconnectionstatechange = event => {
-    if (peerConnection.iceConnectionState === 'connected') {
-        console.log('Connected to server!');
-    }
-};
+// peerConnection.oniceconnectionstatechange = event => {
+//     if (peerConnection.iceConnectionState === 'connected') {
+//         console.log('Connected to server!');
+//     }
+// };
 
 // Signals when a new track is added.
-peerConnection.ontrack = (event) => {
-    console.log('Track added from server!');
-    console.log(event.streams[0].id)
-    var mediaStream = new MediaStream([event.track]);
-    var streamSource = audioContext.createMediaStreamSource(mediaStream);
-    gainNodes[event.streams[0].id] = audioContext.createGain();
-    streamSource.connect(gainNodes  [event.streams[0].id]);
-    gainNodes[event.streams[0].id].connect(audioContext.destination);
-
-    // et voila :) gains are now controllable live with gainNodes[userIdStreamIdMatches[<some user ID>]].gain.value = <gain value>
-}
+// peerConnection.ontrack = (event) => {
+//     console.log('Track added from server!');
+//     console.log(event.streams[0].id)
+//     var mediaStream = new MediaStream([event.track]);
+//     var streamSource = audioContext.createMediaStreamSource(mediaStream);
+//     gainNodes[event.streams[0].id] = audioContext.createGain();
+//     streamSource.connect(gainNodes[event.streams[0].id]);
+//     gainNodes[event.streams[0].id].connect(audioContext.destination);
+// }
 
 // Getting media and connecting to server.
 // getMedia({audio: true, video: false}).then(
 //     connectToSFUWebRTCServer
 // )
-console.log(`Welcome to room ${ROOM_ID}. You are user ${USER_ID}.`);
+// console.log(`Welcome to room ${ROOM_ID}. You are user ${USER_ID}.`);
 
-export {
-    USER_ID,
-    socket,
-    peerConnection,
-    getMedia,
-    connectToSFUWebRTCServer,
-    userIdStreamIdMatches,
-    gainNodes
-};
+// export {
+//     USER_ID,
+//     socket,
+//     peerConnection,
+//     getMedia,
+//     connectToSFUWebRTCServer,
+//     userIdStreamIdMatches,
+//     gainNodes
+// };

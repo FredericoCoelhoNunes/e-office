@@ -36,3 +36,37 @@ Person.peerConnection.connect().then(
     office.addCoworkers()
     office.addStreams()
 )
+
+## Flow
+
+controller starts
+	person is created
+		authentication
+		get avatar
+		get preferences
+        create peerConnection
+
+	office(person) is created
+		render office space
+		create gainNodes object
+			create volumeController
+		add update handlers
+        render avatar inside office
+        person configures its "ontrack", based on the office characteristics (gainNodes)
+	
+	person sends track to server
+		person receives tracks from coworkers
+		office.gainNodes are updated
+
+	loop starts
+		office receives new coworker position
+		office adjusts right gain node
+		person receives new track
+		etc.
+
+	office detects person is leaving
+		person removes all tracks from peerConnection
+		person signals server to stop sending its track to all coworkers in office
+    
+    office(person=)
+

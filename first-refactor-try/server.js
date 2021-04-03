@@ -1,13 +1,13 @@
 const express = require('express');
 const app = express();
 const server = require('http').Server(app);
-const io = require('socket.io')(server);  // all Websockets conections start with an HTTP request :-) 
+const io = require('socket.io')(server); // all Websockets conections start with an HTTP request :-) 
 const wrtc = require("wrtc");
 
 app.set('view engine', 'ejs');
 // Makes all files in this folder accessible by http (e.g. file public/script.js is accessible in server:port/script.js).
 // Otherwise, this route wouldn't exist and the room.ejs file wouldn't be able to access this script. 
-app.use(express.static("public")) 
+app.use(express.static("public"))
 
 // Object to store client WebRTC connections
 let peerConnections = {};
@@ -20,13 +20,11 @@ let sockets = {};
 
 // STUN server configuration
 const configuration = {
-    'iceServers': [
-        {
-            'urls': [
-                'stun:stun.l.google.com:19302',
-            ]
-        }
-    ]
+    'iceServers': [{
+        'urls': [
+            'stun:stun.l.google.com:19302',
+        ]
+    }]
 };
 
 
@@ -42,7 +40,7 @@ app.get('/:room', (req, res) => {
 var addPeerConnection = (userId, roomId, socket) => {
     console.log(`Adding peer connection for user ${userId}`);
     peerConnections[userId] = new wrtc.RTCPeerConnection(configuration);
-    
+
     attachNegotiationEventHandler(peerConnections[userId], socket)
     attachOnIceCandidateEventHandler(peerConnections[userId], socket);
     attachOnSuccessfulConnectionEventHandler(peerConnections[userId], userId);
@@ -52,7 +50,11 @@ var addPeerConnection = (userId, roomId, socket) => {
 
 // Attaches event handler for the onicecandidate event
 var attachOnIceCandidateEventHandler = (peerConnection, socket) => {
-    peerConnection.onicecandidate = ({candidate}) => socket.emit('webrtc-message', {candidate});
+    peerConnection.onicecandidate = ({
+        candidate
+    }) => socket.emit('webrtc-message', {
+        candidate
+    });
 }
 
 
@@ -79,7 +81,11 @@ var attachOnTrackEventHandler = (peerConnection, userId, roomId, socket) => {
 // Update all matches of (userId, transceiverMid). Can't use trackId as it is not the same on both ends.
 // Transciever Mid seems to be guaranteed to keep the order in which it was added.
 var updateUserIdStreamIdMatches = (userIdStreamIdMatches) => {
-    for (var {user, sourceUser, streamId} of userIdStreamIdMatches) {
+    for (var {
+            user,
+            sourceUser,
+            streamId
+        } of userIdStreamIdMatches) {
         sockets[user].emit('userid-streamid-match', sourceUser, streamId);
     }
 };
@@ -91,10 +97,18 @@ var addTracks = (peerConnections, userId) => {
     for (const otherUserId in peerConnections) {
         if (otherUserId != userId) {
             streamId = addUserTrackToDestinationStream(peerConnections, userId, otherUserId);
-            if (streamId) userIdStreamIdMatches.push({"user": otherUserId, "sourceUser": userId, "streamId": streamId});  // this means: on the "user" client, the stream that comes from "sourceUser" has ID "streamId"
+            if (streamId) userIdStreamIdMatches.push({
+                "user": otherUserId,
+                "sourceUser": userId,
+                "streamId": streamId
+            }); // this means: on the "user" client, the stream that comes from "sourceUser" has ID "streamId"
 
             streamId = addUserTrackToDestinationStream(peerConnections, otherUserId, userId);
-            if (streamId) userIdStreamIdMatches.push({"user": userId, "sourceUser": otherUserId, "streamId": streamId}); 
+            if (streamId) userIdStreamIdMatches.push({
+                "user": userId,
+                "sourceUser": otherUserId,
+                "streamId": streamId
+            });
         }
     }
     return userIdStreamIdMatches
@@ -111,12 +125,13 @@ var addUserTrackToDestinationStream = (peerConnections, sourceUser, destinationU
         // This is because stream.id was the ONLY id I could find that is common between peers.
         // If there's a way to do this with addTrack only, would be better.
         const transceiver = peerConnections[destinationUser].addTransceiver(
-            peerConnections[sourceUser].getReceivers()[0].track,
-            {streams: [stream]}
+            peerConnections[sourceUser].getReceivers()[0].track, {
+                streams: [stream]
+            }
         );
-        
+
         return streamId
-        
+
         console.log(`Successfully added user ${sourceUser}'s track to user ${destinationUser}'s stream.`);
     } catch (e) {
         console.log(e)
@@ -127,7 +142,9 @@ var addUserTrackToDestinationStream = (peerConnections, sourceUser, destinationU
 var attachNegotiationEventHandler = async (peerConnection, socket) => {
     peerConnection.onnegotiationneeded = async () => {
         await peerConnection.setLocalDescription(await peerConnection.createOffer());
-        socket.emit('webrtc-message', {'description': peerConnection.localDescription});
+        socket.emit('webrtc-message', {
+            'description': peerConnection.localDescription
+        });
     }
 };
 
@@ -137,7 +154,11 @@ io.on('connection', socket => {
     socket.emit('current-players', players);
 
     socket.on('new-player', (playerName, x, y) => {
-        players[socket.id] = {playerName, x, y};
+        players[socket.id] = {
+            playerName,
+            x,
+            y
+        };
         socket.broadcast.emit('new-player', players[socket.id]);
     });
 
@@ -151,7 +172,7 @@ io.on('connection', socket => {
             console.log(players);
         }
     })
-    
+
 
     // Notifying all users that a new user joined
     socket.on('user-joined-room', (userId, roomId) => {
@@ -162,12 +183,17 @@ io.on('connection', socket => {
     });
 
     // Connecting to client
-    socket.on('webrtc-message', async ({userId, roomId, data}) => {
+    socket.on('webrtc-message', async ({
+        userId,
+        data
+    }) => {
         if (data.description) {
             await peerConnections[userId].setRemoteDescription(data.description);
             if (data.description.type == "offer") {
-              await peerConnections[userId].setLocalDescription(await peerConnections[userId].createAnswer());
-              socket.emit('webrtc-message', {description: peerConnections[userId].localDescription});
+                await peerConnections[userId].setLocalDescription(await peerConnections[userId].createAnswer());
+                socket.emit('webrtc-message', {
+                    description: peerConnections[userId].localDescription
+                });
             }
         } else if (data.candidate && data.candidate.candidate != "") await peerConnections[userId].addIceCandidate(data.candidate);
     });

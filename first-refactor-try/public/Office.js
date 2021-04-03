@@ -9,21 +9,45 @@ class Office():
 */
 
 class Office {
-    constructor(officeName) {
+    constructor(officeName, person, audioContext) {
         this.officeName = officeName;
-        this.coworkers = {}; // object that contains streams, gainNodes, and userIds from coworkers
-        //this.streams = [];
+        this.person = person;
+        this.coworkers = {};
         //this.userIdStreamIdMatches = {};
         //this.gainNodes = {};
-        this.audioContext = new window.AudioContext();
+        this.audioContext = audioContext;
+
+        this.person.conn.configureOnTrackHandler(this);
     }
 
-    addPerson(person) {
-        this.person = person
-    }
-
-    addCoworker() {
+    addCoworker(coworkerName, x, y, phaserGame) {
         console.log("Adding coworker to office room")
+        this.coworkers[coworkerName] = {
+            sprite: phaserGame.add.sprite('person').setOrigin(0.5, 0.5),
+            x,
+            y,
+            gainNode: undefined
+        }
+    }
+
+    updatePosition(coworkerName, x, y) {
+        this.coworkers[coworkerName].x = x;
+        this.coworkers[coworkerName].y = y;
+        this.coworkers[coworkerName].sprite.setPosition(x, y);
+    }
+
+    updateGain(coworkerName, x, y) {
+
+        let newVal = this.calculateGain(this.player.x, this.player.y, x, y);
+
+        console.log(`New gain for user ${coworkerName} is ${newVal}`)
+        try {
+            this.coworkers[coworkerName].gainNode.gain.value = newVal;
+        } catch (e) {
+            console.log(e);
+            console.log(userIdStreamIdMatches);
+            console.log(gainNodes);
+        }
     }
 
 }
