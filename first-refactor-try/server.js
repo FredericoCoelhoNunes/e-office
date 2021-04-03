@@ -1,3 +1,6 @@
+const {
+    SSL_OP_NO_TICKET
+} = require('constants');
 const express = require('express');
 const app = express();
 const server = require('http').Server(app);
@@ -5,18 +8,11 @@ const io = require('socket.io')(server); // all Websockets conections start with
 const wrtc = require("wrtc");
 
 app.set('view engine', 'ejs');
-// Makes all files in this folder accessible by http (e.g. file public/script.js is accessible in server:port/script.js).
-// Otherwise, this route wouldn't exist and the room.ejs file wouldn't be able to access this script. 
 app.use(express.static("public"))
 
-// Object to store client WebRTC connections
-let peerConnections = {};
-
-// Object to store the players
-var players = {};
-
-// Socket IDs
-let sockets = {};
+// To store info about players that joined
+let roomData = {};
+let usersCurrentRoom = {}; // just a helper variable to keep track of users current rooms.
 
 // STUN server configuration
 const configuration = {
@@ -28,23 +24,23 @@ const configuration = {
 };
 
 
-// Renders a room.
-app.get('/:room', (req, res) => {
-    res.render('room.ejs', {
-        room: req.params.room
+// Renders a office.
+app.get('/:office', (req, res) => {
+    res.render('office.ejs', {
+        office: req.params.office
     })
 })
 
 
 // Function to add a new peer connection with a client.
-var addPeerConnection = (userId, roomId, socket) => {
-    console.log(`Adding peer connection for user ${userId}`);
-    peerConnections[userId] = new wrtc.RTCPeerConnection(configuration);
+var addPeerConnection = (userData, userId, roomId) => {
+    console.log(`Adding peer connection for user ${userData.userName}`);
+    userData.peerConnection = new wrtc.RTCPeerConnection(configuration);
 
-    attachNegotiationEventHandler(peerConnections[userId], socket)
-    attachOnIceCandidateEventHandler(peerConnections[userId], socket);
-    attachOnSuccessfulConnectionEventHandler(peerConnections[userId], userId);
-    attachOnTrackEventHandler(peerConnections[userId], userId, roomId, socket);
+    attachNegotiationEventHandler(userData.peerConnection, userData.socket)
+    attachOnIceCandidateEventHandler(userData.peerConnection, userData.socket);
+    attachOnSuccessfulConnectionEventHandler(userData.peerConnection, userData.userName);
+    attachOnTrackEventHandler(userData, userId, roomId);
 };
 
 
@@ -68,55 +64,61 @@ var attachOnSuccessfulConnectionEventHandler = (peerConnection, userId) => {
 };
 
 // Whenever a new track is received, we want to direct it to all other peers
-var attachOnTrackEventHandler = (peerConnection, userId, roomId, socket) => {
-    peerConnection.ontrack = event => {
+var attachOnTrackEventHandler = (userData, userId, roomId) => {
+    userData.peerConnection.ontrack = event => {
         // Adding each user's tracks to each other's peer connection's with the server.
-        userIdStreamIdMatches = addTracks(peerConnections, userId);
-        console.log(userIdStreamIdMatches);
+        userNameStreamIdMatches = addTracks(roomData, userData, userId, roomId);
         // Update all users's (trackId,userId) matches
-        updateUserIdStreamIdMatches(userIdStreamIdMatches);
+        updateUserNameStreamIdMatches(roomId, userNameStreamIdMatches);
     }
 }
 
 // Update all matches of (userId, transceiverMid). Can't use trackId as it is not the same on both ends.
 // Transciever Mid seems to be guaranteed to keep the order in which it was added.
-var updateUserIdStreamIdMatches = (userIdStreamIdMatches) => {
+var updateUserNameStreamIdMatches = (roomId, userIdStreamIdMatches) => {
     for (var {
-            user,
+            userId,
             sourceUser,
             streamId
         } of userIdStreamIdMatches) {
-        sockets[user].emit('userid-streamid-match', sourceUser, streamId);
+        roomData[roomId][userId].socket.emit('streamid-coworkername-match', streamId, sourceUser);
     }
 };
 
-// Adds every other user's tracks to a new user, and vice versa
-var addTracks = (peerConnections, userId) => {
-    let userIdStreamIdMatches = [];
+// Adds every other user's tracks to a new user, and vice versa (for users in the same room)
+var addTracks = (roomData, userData, userId, roomId) => {
+    let userNameStreamIdMatches = [];
     let streamId;
-    for (const otherUserId in peerConnections) {
-        if (otherUserId != userId) {
-            streamId = addUserTrackToDestinationStream(peerConnections, userId, otherUserId);
-            if (streamId) userIdStreamIdMatches.push({
-                "user": otherUserId,
-                "sourceUser": userId,
+    for (const [otherUserId, otherUserData] of Object.entries(roomData[roomId])) {
+
+        // console.log('\n\n\nRoom data:', roomData);
+        // console.log('\n\n\nuserData:', userData);
+        // console.log('\n\n\notherUserData:', otherUserData);
+        // console.log('\n\n\n roomId:', roomId)
+        // console.log('\n\n\n otherUserId:', otherUserId)
+
+        if (otherUserData.userName != userData.userName) {
+            streamId = addUserTrackToDestinationStream(userData, otherUserData);
+            if (streamId) userNameStreamIdMatches.push({
+                "userId": otherUserId,
+                "sourceUser": userData.userName,
                 "streamId": streamId
             }); // this means: on the "user" client, the stream that comes from "sourceUser" has ID "streamId"
 
-            streamId = addUserTrackToDestinationStream(peerConnections, otherUserId, userId);
-            if (streamId) userIdStreamIdMatches.push({
-                "user": userId,
-                "sourceUser": otherUserId,
+            streamId = addUserTrackToDestinationStream(otherUserData, userData);
+            if (streamId) userNameStreamIdMatches.push({
+                "userId": userId,
+                "sourceUser": otherUserData.userName,
                 "streamId": streamId
             });
         }
     }
-    return userIdStreamIdMatches
+    return userNameStreamIdMatches
 }
 // The actual function logic that adds a user's track to another user's stream.
 // Also sends a notification to the user with (trackId, sourceUser) so the volume can be tuned on client-side
-var addUserTrackToDestinationStream = (peerConnections, sourceUser, destinationUser) => {
-    console.log(`Adding user ${sourceUser}'s track to user ${destinationUser}'s stream.`)
+var addUserTrackToDestinationStream = (sourceUserData, destinationUserData) => {
+    console.log(`Adding user ${sourceUserData.userName}'s track to user ${destinationUserData.userName}'s stream.`)
     try {
         var stream = new wrtc.MediaStream();
         var streamId = stream.id;
@@ -124,17 +126,15 @@ var addUserTrackToDestinationStream = (peerConnections, sourceUser, destinationU
         // TODO: Not sure if this is a good way to do it, but I am trying to force each track to be on an individual stream.
         // This is because stream.id was the ONLY id I could find that is common between peers.
         // If there's a way to do this with addTrack only, would be better.
-        const transceiver = peerConnections[destinationUser].addTransceiver(
-            peerConnections[sourceUser].getReceivers()[0].track, {
+        destinationUserData.peerConnection.addTransceiver(
+            sourceUserData.peerConnection.getReceivers()[0].track, {
                 streams: [stream]
             }
         );
 
         return streamId
-
-        console.log(`Successfully added user ${sourceUser}'s track to user ${destinationUser}'s stream.`);
     } catch (e) {
-        console.log(e)
+        console.log('Error: ', e)
     }
 };
 
@@ -148,54 +148,77 @@ var attachNegotiationEventHandler = async (peerConnection, socket) => {
     }
 };
 
+var getCurrentCoworkers = (roomData, userId, roomId) => {
+    let currentCoworkers = {};
+    for (const [otherUserId, userData] of Object.entries(roomData[roomId])) {
+        if (otherUserId != userId) {
+            currentCoworkers[otherUserId] = {
+                userName: userData.userName,
+                x: userData.x,
+                y: userData.y
+            };
+        }
+    }
+
+    return currentCoworkers
+}
+
 // socket.io server.
 io.on('connection', socket => {
 
-    socket.emit('current-players', players);
+    //socket.emit('current-players', players);
 
-    socket.on('new-player', (playerName, x, y) => {
-        players[socket.id] = {
-            playerName,
+    socket.on('new-coworker', (userName, roomId, x, y) => {
+        console.log(`${userName} joined. (socket id is ${socket.id})`)
+        socket.join(roomId);
+        usersCurrentRoom[socket.id] = roomId;
+
+        if (!(roomId in roomData)) {
+            console.log(`Empty room ${roomId}`)
+            roomData[roomId] = {};
+        }
+
+        roomData[roomId][socket.id] = {
+            userName,
             x,
-            y
-        };
-        socket.broadcast.emit('new-player', players[socket.id]);
+            y,
+            socket
+        }
+
+        addPeerConnection(roomData[roomId][socket.id], socket.id, roomId);
+        socket.to(roomId).emit('new-coworker', userName, x, y);
+
+        var currentCoworkers = getCurrentCoworkers(roomData, socket.id, roomId);
+
+        console.log('Sending current coworkers: ', currentCoworkers);
+        socket.emit('current-coworkers', currentCoworkers);
     });
 
-    socket.on('new-position', (x, y) => {
+    socket.on('new-position', (x, y, roomId) => {
         try {
-            players[socket.id].x = x;
-            players[socket.id].y = y;
-            socket.broadcast.emit('new-position', players[socket.id].playerName, x, y);
+            roomData[roomId][socket.id].x = x;
+            roomData[roomId][socket.id].y = y;
+            socket.to(roomId).emit('new-position', roomData[roomId][socket.id].userName, x, y);
         } catch (e) {
-            console.log(e);
-            console.log(players);
+            console.log('Error: ', e);
         }
     })
 
-
-    // Notifying all users that a new user joined
-    socket.on('user-joined-room', (userId, roomId) => {
-        socket.join(roomId);
-        sockets[userId] = socket;
-        socket.to(roomId).emit('user-joined-room', userId);
-        addPeerConnection(userId, roomId, socket);
-    });
-
     // Connecting to client
     socket.on('webrtc-message', async ({
-        userId,
         data
     }) => {
+        var currRoom = usersCurrentRoom[socket.id];
+        var userPeerConnection = roomData[currRoom][socket.id].peerConnection;
         if (data.description) {
-            await peerConnections[userId].setRemoteDescription(data.description);
+            await userPeerConnection.setRemoteDescription(data.description);
             if (data.description.type == "offer") {
-                await peerConnections[userId].setLocalDescription(await peerConnections[userId].createAnswer());
+                await userPeerConnection.setLocalDescription(await userPeerConnection.createAnswer());
                 socket.emit('webrtc-message', {
-                    description: peerConnections[userId].localDescription
+                    description: userPeerConnection.localDescription
                 });
             }
-        } else if (data.candidate && data.candidate.candidate != "") await peerConnections[userId].addIceCandidate(data.candidate);
+        } else if (data.candidate && data.candidate.candidate != "") await userPeerConnection.addIceCandidate(data.candidate);
     });
 })
 

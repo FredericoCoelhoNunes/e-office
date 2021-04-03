@@ -11,19 +11,29 @@ socket;
 
 */
 
+import {
+    ConfiguredPeerConnection
+} from './ConfiguredPeerConnection.js';
+
+
 class Person {
-    constructor(personId, socket) {
-        this.personId = personId;
+    constructor(userName, socket) {
+        this.userName = userName;
+        this.sprite = undefined;
+        this.socket = socket;
 
         this.peerConnection = new ConfiguredPeerConnection(
-            this.personId,
             socket
         );
     }
 
     getAvatarFilename() {
         console.log("Getting avatar...")
-        return "person"
+        return "assets/person.png"
+    }
+
+    createSprite(phaserGame) {
+        this.sprite = phaserGame.physics.add.image(400, 300, 'person')
     }
 
     getVoice() {
@@ -42,14 +52,25 @@ class Person {
         this.peerConnection.addTrack(stream.getTracks()[0]);
     }
 
+    joinRoom(office, roomId) {
+        office.setActiveRoom(roomId);
+
+        this.socket.emit(
+            'new-coworker',
+            this.userName,
+            roomId,
+            this.sprite.x,
+            this.sprite.y
+        );
+    }
+
+    leaveRoom(office, roomId) {
+        this.socket.leave(roomId);
+        // TODO: clear streams, clear all office objects
+        this.socket.emit('coworker-left-room', this.userName, roomId);
+    }
 }
 
-function makeId(length) {
-    var result = '';
-    var characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    var charactersLength = characters.length;
-    for (var i = 0; i < length; i++) {
-        result += characters.charAt(Math.floor(Math.random() * charactersLength));
-    }
-    return result;
-}
+export {
+    Person
+};

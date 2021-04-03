@@ -55,17 +55,17 @@ const audioContext = new window.AudioContext();
 // }
 
 // New user joins a room
-socket.on('user-joined-room', userId => {
-    console.log(`User ${userId} joined the room.`);
-});
+// socket.on('user-joined-room', userId => {
+//     console.log(`User ${userId} joined the room.`);
+// });
 
 // Sending message: joined the server
 // socket.emit('user-joined-room', USER_ID);
 
 // New userId/trackId match received
-socket.on('userid-streamid-match', (userId, streamId) => {
-    userIdStreamIdMatches[userId] = streamId;
-});
+// socket.on('userid-streamid-match', (userId, streamId) => {
+//     userIdStreamIdMatches[userId] = streamId;
+// });
 
 // Listen for local ICE candidates on the local RTCPeerConnection
 // peerConnection.onicecandidate = ({candidate}) => socket.emit('webrtc-message', {userId: USER_ID, roomId: ROOM_ID, data: {"candidate": candidate}});

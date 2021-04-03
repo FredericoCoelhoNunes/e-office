@@ -4,7 +4,7 @@ class ConfiguredPeerConnection {
     signalling server.
     */
 
-    constructor(personId, socket) {
+    constructor(socket) {
         this.configuration = {
             'iceServers': [{
                 'urls': [
@@ -13,7 +13,6 @@ class ConfiguredPeerConnection {
             }]
         };
         this.socket = socket;
-        this.personId = personId;
         this.conn = new RTCPeerConnection(this.configuration);
         this.configureNegotiationHandlers();
     }
@@ -29,7 +28,6 @@ class ConfiguredPeerConnection {
                 if (description.type == "offer") {
                     await this.conn.setLocalDescription(await this.conn.createAnswer());
                     this.socket.emit('webrtc-message', {
-                        personId: this.personId,
                         data: {
                             "description": this.conn.localDescription
                         }
@@ -43,7 +41,6 @@ class ConfiguredPeerConnection {
         }) => {
             this.socket.emit(
                 'webrtc-message', {
-                    personId: this.personId,
                     data: {
                         "candidate": candidate
                     }
@@ -55,7 +52,6 @@ class ConfiguredPeerConnection {
             console.log('Starting negotiation.')
             await this.conn.setLocalDescription(await this.conn.createOffer());
             this.socket.emit('webrtc-message', {
-                personId: this.personId,
                 data: {
                     "description": this.conn.localDescription
                 }
@@ -71,23 +67,29 @@ class ConfiguredPeerConnection {
 
     }
 
-    configureOnTrackHandler(office, audioContext) {
+    configureOnTrackHandler(coworkers, streamId2CoworkerName, audioContext) {
         // Signals when a new track is added.
         this.conn.ontrack = (event) => {
 
-            var coworkerName = office.
+            var coworkerName = streamId2CoworkerName[event.streams[0].id];
 
-            console.log('Track added from server!');
-            console.log(event.streams[0].id)
+            console.log('Coworkers as seen inside TrackHandler: ', coworkers);
+            console.log('Coworker name that just added a track: ', coworkerName);
+            console.log('StreamId2CoworkerName: ', streamId2CoworkerName);
+
+            // console.log(event.streams[0].id)
             var mediaStream = new MediaStream([event.track]);
             var streamSource = audioContext.createMediaStreamSource(mediaStream);
-            gainNodes[event.streams[0].id] = audioContext.createGain();
-            streamSource.connect(gainNodes[event.streams[0].id]);
-            gainNodes[event.streams[0].id].connect(audioContext.destination);
+            streamSource.connect(coworkers[coworkerName].gainNode);
+            coworkers[coworkerName].gainNode.connect(audioContext.destination);
         }
+    }
+
+    addTrack(track) {
+        this.conn.addTrack(track);
     }
 }
 
-// export {
-//     ConfiguredPeerConnection
-// };
+export {
+    ConfiguredPeerConnection
+};

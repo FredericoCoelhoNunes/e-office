@@ -70,3 +70,15 @@ controller starts
     
     office(person=)
 
+
+# TODO:
+
+- garbage collection on client and server-side
+    - on client side delete all things in Office;
+    - on server side delete everything related to socket.id for the user;
+    - if a room is empty on server side, delete the room too;
+    - stop all tracks for the deleted user on other stream
+        - better if you can delete the corresponding transceiver, because we don't know if "stopped" transceivers still make the connections slower for some reason.
+- implement Avatar class and add to Person and Coworkers
+- implement BasicVolumeController and add to Office
+- comment everything
