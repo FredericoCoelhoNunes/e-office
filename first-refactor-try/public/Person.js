@@ -69,6 +69,10 @@ class Person {
         // TODO: clear streams, clear all office objects
         this.socket.emit('coworker-left-room', this.userName, roomId);
     }
+
+    emitNewPosition(x, y) {
+        this.socket.emit('new-position', x, y, this.activeRoom);
+    }
 }
 
 export {

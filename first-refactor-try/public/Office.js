@@ -1,14 +1,9 @@
-/*
-class Office():
-    "Office, from the point of view of a person".
-
-    person;
-    co-workers;  # list of avatars?
-    streams;
-
-*/
-
-class Office {
+/** 
+Class that represents the office space and all its rooms, from the point of view
+of a person. Controls the office appearance, the coworkers currently in the
+office
+**/
+class Offices {
     constructor(officeName, person, audioContext, socket) {
         this.officeName = officeName;
         this.person = person;
@@ -106,10 +101,6 @@ class Office {
         this.socket.on('streamid-coworkername-match', (streamId, coworkerName) => {
             this.streamId2CoworkerName[streamId] = coworkerName;
         })
-    }
-
-    emitNewPosition(x, y) {
-        this.socket.emit('new-position', x, y, this.activeRoom);
     }
 
     setActiveRoom(roomId) {

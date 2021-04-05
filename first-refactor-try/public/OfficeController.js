@@ -100,7 +100,7 @@ class OfficeController {
                     "y": y
                 };
 
-                self.office.emitNewPosition(x, y);
+                self.person.emitNewPosition(x, y);
             }
         }
 

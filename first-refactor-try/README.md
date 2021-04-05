@@ -74,7 +74,7 @@ controller starts
 # TODO:
 
 - garbage collection on client and server-side
-    - on client side delete all things in Office;
+    - on client side delete all things in Office, stop all incoming track in peerConnection;
     - on server side delete everything related to socket.id for the user;
     - if a room is empty on server side, delete the room too;
     - stop all tracks for the deleted user on other stream
@@ -82,3 +82,4 @@ controller starts
 - implement Avatar class and add to Person and Coworkers
 - implement BasicVolumeController and add to Office
 - comment everything
+- remove excessive console.logs
