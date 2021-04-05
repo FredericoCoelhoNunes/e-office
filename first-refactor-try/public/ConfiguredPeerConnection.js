@@ -86,7 +86,11 @@ class ConfiguredPeerConnection {
     }
 
     addTrack(track) {
-        this.conn.addTrack(track);
+        return this.conn.addTrack(track);
+    }
+
+    stopTransceivers() {
+        this.conn.getTransceivers().forEach(tr => tr.stop());
     }
 }
 

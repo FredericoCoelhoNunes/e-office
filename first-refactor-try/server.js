@@ -13,6 +13,7 @@ app.use(express.static("public"))
 // To store info about players that joined
 let roomData = {};
 let usersCurrentRoom = {}; // just a helper variable to keep track of users current rooms.
+let peerConnections = {};
 
 // STUN server configuration
 const configuration = {
@@ -35,11 +36,11 @@ app.get('/:office', (req, res) => {
 // Function to add a new peer connection with a client.
 var addPeerConnection = (userData, userId, roomId) => {
     console.log(`Adding peer connection for user ${userData.userName}`);
-    userData.peerConnection = new wrtc.RTCPeerConnection(configuration);
+    peerConnections[userId] = new wrtc.RTCPeerConnection(configuration);
 
-    attachNegotiationEventHandler(userData.peerConnection, userData.socket)
-    attachOnIceCandidateEventHandler(userData.peerConnection, userData.socket);
-    attachOnSuccessfulConnectionEventHandler(userData.peerConnection, userData.userName);
+    attachNegotiationEventHandler(peerConnections[userId], userData.socket)
+    attachOnIceCandidateEventHandler(peerConnections[userId], userData.socket);
+    attachOnSuccessfulConnectionEventHandler(peerConnections[userId], userData.userName);
     attachOnTrackEventHandler(userData, userId, roomId);
 };
 
@@ -65,7 +66,7 @@ var attachOnSuccessfulConnectionEventHandler = (peerConnection, userId) => {
 
 // Whenever a new track is received, we want to direct it to all other peers
 var attachOnTrackEventHandler = (userData, userId, roomId) => {
-    userData.peerConnection.ontrack = event => {
+    peerConnections[userId].ontrack = event => {
         // Adding each user's tracks to each other's peer connection's with the server.
         userNameStreamIdMatches = addTracks(roomData, userData, userId, roomId);
         // Update all users's (trackId,userId) matches
@@ -126,11 +127,13 @@ var addUserTrackToDestinationStream = (sourceUserData, destinationUserData) => {
         // TODO: Not sure if this is a good way to do it, but I am trying to force each track to be on an individual stream.
         // This is because stream.id was the ONLY id I could find that is common between peers.
         // If there's a way to do this with addTrack only, would be better.
-        destinationUserData.peerConnection.addTransceiver(
-            sourceUserData.peerConnection.getReceivers()[0].track, {
+        outgoingTransceiver = peerConnections[destinationUserData.socket.id].addTransceiver(
+            peerConnections[sourceUserData.socket.id].getReceivers()[0].track, {
                 streams: [stream]
             }
         );
+
+        sourceUserData.outgoingTransceivers.push(outgoingTransceiver);
 
         return streamId
     } catch (e) {
@@ -163,6 +166,13 @@ var getCurrentCoworkers = (roomData, userId, roomId) => {
     return currentCoworkers
 }
 
+var deleteUserData = (userName, roomId) => {
+    socket.to(roomId).emit('coworker-left-room', userName);
+    roomData[roomId][socket.id].outgoingTransceivers.forEach(tr => tr.stop());
+    delete roomData[roomId][socket.id];
+    delete usersCurrentRoom[socket.id];
+}
+
 // socket.io server.
 io.on('connection', socket => {
 
@@ -182,7 +192,8 @@ io.on('connection', socket => {
             userName,
             x,
             y,
-            socket
+            socket,
+            "outgoingTransceivers" : []
         }
 
         addPeerConnection(roomData[roomId][socket.id], socket.id, roomId);
@@ -208,8 +219,7 @@ io.on('connection', socket => {
     socket.on('webrtc-message', async ({
         data
     }) => {
-        var currRoom = usersCurrentRoom[socket.id];
-        var userPeerConnection = roomData[currRoom][socket.id].peerConnection;
+        var userPeerConnection = peerConnections[socket.id];
         if (data.description) {
             await userPeerConnection.setRemoteDescription(data.description);
             if (data.description.type == "offer") {
@@ -220,6 +230,19 @@ io.on('connection', socket => {
             }
         } else if (data.candidate && data.candidate.candidate != "") await userPeerConnection.addIceCandidate(data.candidate);
     });
+
+    socket.on('coworker-left-room', deleteUserData);
+    
+    socket.on('disconnect', () => {
+        roomId = usersCurrentRoom[socket.id];
+        if (roomId) {
+            userName = roomData[roomId][socket.id].userName;
+            deleteUserData(userName, roomId);
+        }
+        delete peerConnections[socket.id];
+    });
+    
+
 })
 
 server.listen(5500);

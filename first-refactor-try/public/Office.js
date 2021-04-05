@@ -101,10 +101,23 @@ class Offices {
         this.socket.on('streamid-coworkername-match', (streamId, coworkerName) => {
             this.streamId2CoworkerName[streamId] = coworkerName;
         })
+
+        this.socket.on('coworker-left-room', (userName) => {
+            delete this.coworkers[userName];
+
+            // for each value = streamId2CoworkerName[streamId]
+            // if value = userName then delete streamId2CoworkerName[streamId] 
+        })
     }
 
-    setActiveRoom(roomId) {
+    changeActiveRoom(roomId) {
         this.activeRoom = roomId;
+    }
+
+    clearState() {
+        this.coworkers = {};
+        this.streamId2CoworkerName = {};
+        this.activeRoom = undefined;
     }
 }
 

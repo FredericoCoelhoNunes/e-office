@@ -53,6 +53,7 @@ class Person {
     }
 
     joinRoom(office, roomId) {
+        this.peerConnection.configureOnTrackHandler();
         office.setActiveRoom(roomId);
 
         this.socket.emit(
@@ -66,8 +67,11 @@ class Person {
 
     leaveRoom(office, roomId) {
         this.socket.leave(roomId);
-        // TODO: clear streams, clear all office objects
         this.socket.emit('coworker-left-room', this.userName, roomId);
+        office.clearState();
+        this.peerConnection.stopTransceivers();
+
+
     }
 
     emitNewPosition(x, y) {
