@@ -44,6 +44,7 @@ class OfficeController {
             self.cursors = this.input.keyboard.createCursorKeys();
 
             self.person.joinRoom(self.office, self.office.defaultRoom);
+            self.person.sendVoice();
         }
 
         return create

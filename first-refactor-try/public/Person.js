@@ -53,9 +53,6 @@ class Person {
     joinRoom(office, roomId) {
         office.changeActiveRoom(roomId);
 
-        this.peerConnection.closeConnIfOpen();
-        this.peerConnection.getConn();
-
         this.peerConnection.configureOnTrackHandler(
             self.office.coworkers,
             self.office.streamId2CoworkerName,
@@ -69,8 +66,6 @@ class Person {
             this.avatar.x,
             this.avatar.y
         );
-
-        this.sendVoice();
     }
 
     leaveRoom(office, roomId) {

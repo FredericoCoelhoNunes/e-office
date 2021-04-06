@@ -64,14 +64,19 @@ var attachOnSuccessfulConnectionEventHandler = (peerConnection, userId) => {
     }
 };
 
+var addTracksAndUpdateUserNameStreamIdMatches = (roomData, userData, userId, roomId) => {
+    // Adding each user's tracks to each other's peer connection's with the server.
+    userNameStreamIdMatches = addTracks(roomData, userData, userId, roomId);
+    // Update all users's (trackId,userId) matches
+    updateUserNameStreamIdMatches(roomId, userNameStreamIdMatches);
+}
+
 // Whenever a new track is received, we want to direct it to all other peers
 var attachOnTrackEventHandler = (userData, userId, roomId) => {
     peerConnections[userId].ontrack = (event) => {
-        // Adding each user's tracks to each other's peer connection's with the server.
-        userNameStreamIdMatches = addTracks(roomData, userData, userId, roomId);
-        // Update all users's (trackId,userId) matches
-        updateUserNameStreamIdMatches(roomId, userNameStreamIdMatches);
+        addTracksAndUpdateUserNameStreamIdMatches(roomData, userData, userId, roomId);
     }
+
 }
 
 // Update all matches of (userId, transceiverMid). Can't use trackId as it is not the same on both ends.
@@ -168,7 +173,7 @@ var deleteUserData = (socket, userName, roomId) => {
         tr.stop();
     }
 
-    // deleting outgoing transceivers for other users directed at the user that is leaving
+    // deleting outgoing transceivers from other users directed at the user that is leaving
     for (const [otherUserName, otherUserData] of Object.entries(roomData[roomId])) {
         if (otherUserName != userName) {
             let found = false;
@@ -186,7 +191,6 @@ var deleteUserData = (socket, userName, roomId) => {
 
     delete roomData[roomId][socket.id];
     delete usersCurrentRoom[socket.id];
-    delete peerConnections[socket.id];
 }
 
 // socket.io server.
@@ -198,7 +202,6 @@ io.on('connection', socket => {
         usersCurrentRoom[socket.id] = roomId;
 
         if (!(roomId in roomData)) {
-            console.log(`Empty room ${roomId}. Deleting.`)
             roomData[roomId] = {};
         }
 
@@ -210,13 +213,33 @@ io.on('connection', socket => {
             "outgoingTransceivers": {}
         }
 
-        addPeerConnection(roomData[roomId][socket.id], socket.id, roomId);
+        if (!peerConnections[socket.id]) {
+            addPeerConnection(roomData[roomId][socket.id], socket.id, roomId);
+        }
         socket.to(roomId).emit('new-coworker', userName, x, y);
 
         var currentCoworkers = getCurrentCoworkers(roomData, socket.id, roomId);
 
         console.log('Sending current coworkers: ', currentCoworkers);
         socket.emit('current-coworkers', currentCoworkers);
+
+        // If this user is coming from another room, that means his track is
+        // already being sent. Which means we just have to redirect it :)
+        // Try catch is because if you leave/join room too fast, sometimes it
+        // crashes on the server side =(
+        try {
+            if (peerConnections[socket.id].getReceivers().length >= 1) {
+                console.log("Resending track")
+                addTracksAndUpdateUserNameStreamIdMatches(
+                    roomData,
+                    roomData[roomId][socket.id],
+                    socket.id,
+                    roomId
+                )
+            }
+        } catch (e) {
+            console.log(e)
+        }
     });
 
     socket.on('new-position', (x, y) => {

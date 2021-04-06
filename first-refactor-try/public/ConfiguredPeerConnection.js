@@ -13,7 +13,7 @@ class ConfiguredPeerConnection {
             }]
         };
         this.socket = socket;
-        this.conn = undefined;
+        this.getAndConfigureConnection();
     }
 
     configureNegotiationHandlers() {
@@ -89,12 +89,11 @@ class ConfiguredPeerConnection {
 
     stopTransceivers() {
         this.conn.getTransceivers().forEach(tr => {
-            console.log(tr.direction);
             tr.stop();
         });
     }
 
-    getConn() {
+    getAndConfigureConnection() {
         this.conn = new RTCPeerConnection(this.configuration);
         this.configureNegotiationHandlers();
     }
