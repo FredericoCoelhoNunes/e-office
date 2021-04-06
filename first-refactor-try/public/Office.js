@@ -3,72 +3,52 @@ Class that represents the office space and all its rooms, from the point of view
 of a person. Controls the office appearance, the coworkers currently in the
 office
 **/
-class Offices {
+
+import {
+    Avatar
+} from './Avatar.js'
+
+import {
+    BasicAudioController
+} from './BasicAudioController.js'
+
+
+
+class Office {
     constructor(officeName, person, audioContext, socket) {
         this.officeName = officeName;
         this.person = person;
         this.coworkers = {};
         this.streamId2CoworkerName = {};
         this.socket = socket;
-        this.audioContext = audioContext;
+        this.audioController = new BasicAudioController(audioContext);
         this.rooms = [1, 2, 3]; // TODO: actually use
         this.defaultRoom = 1;
         this.activeRoom = undefined;
     }
 
     addCoworker(coworkerName, x, y, phaserGame) {
-        console.log("Adding coworker to office room")
         this.coworkers[coworkerName] = {
-            sprite: phaserGame.add.sprite(x, y, 'person').setOrigin(0.5, 0.5),
-            gainNode: this.audioContext.createGain()
+            avatar: new Avatar("person", "assets/person.png"),
+            gainNode: this.audioController.createGain()
         }
-        this.coworkers[coworkerName].sprite.setScale(0.2);
+
+        // add phaserGame.load.image(spriteName, fileName) when these are sent
+        // by the coworker;
+        this.coworkers[coworkerName].avatar.addSprite(phaserGame, x, y)
+
     }
 
     updatePosition(coworkerName, x, y) {
-        console.log(this.coworkers);
-        console.log(coworkerName);
-        this.coworkers[coworkerName].sprite.setPosition(x, y);
+        this.coworkers[coworkerName].avatar.setPosition(x, y);
     }
 
     // TODO: Move to volume controller
     updateGain(coworkerName, x, y) {
-
-        let newVal = this.calculateGain(this.person.sprite.x, this.person.sprite.y, x, y);
-
-        console.log(`New gain for user ${coworkerName} is ${newVal}`)
-        try {
-            this.coworkers[coworkerName].gainNode.gain.value = newVal;
-        } catch (e) {
-            console.log(e);
-            console.log(userIdStreamIdMatches);
-            console.log(gainNodes);
-        }
+        this.audioController.updateGain(this, coworkerName, x, y);
     }
-
-    // TODO: Move to volume controller
-    calculateGain(x1, y1, x2, y2) {
-        // Assuming gain = 1 is when position coincide, gain = 0 is for >100 units
-        let distance = this.getDistance(x1, y1, x2, y2)
-        let newGain;
-
-        newGain = 1 / (1 + distance / 10) // todo: fix this! sometimes newGain > 1?!
-        return newGain
-    }
-
-    getDistance(x1, y1, x2, y2) {
-        var a = x1 - x2;
-        var b = y1 - y2;
-        var distance = Math.sqrt(a * a + b * b);
-        return distance
-    };
-
 
     configureEventHandlers(phaserGame) {
-
-        // socket.on('user-joined-room', userId => {
-        //     console.log(`User ${userId} joined the room.`);
-        // });
 
         this.socket.on('new-coworker', (
             coworkerName,
@@ -80,18 +60,14 @@ class Offices {
         })
 
         this.socket.on('current-coworkers', data => {
-            console.log('received all coworkers: ', data);
+            console.log('Received all coworkers: ', data);
             var self = this;
             Object.keys(data).forEach(function (id) {
-                // TODO: check if keys match
-                console.log(data);
                 self.addCoworker(data[id].userName, data[id].x, data[id].y, phaserGame);
-                console.log(`Added ${data[id].userName}.`)
             })
         })
 
         this.socket.on('new-position', (coworkerName, x, y) => {
-            console.log('received new position')
             this.updatePosition(coworkerName, x, y)
 
             // TODO: replace by volumeController.updateGain ...
@@ -103,11 +79,24 @@ class Offices {
         })
 
         this.socket.on('coworker-left-room', (userName) => {
-            delete this.coworkers[userName];
-
-            // for each value = streamId2CoworkerName[streamId]
-            // if value = userName then delete streamId2CoworkerName[streamId] 
+            this.removeCoworker(userName);
         })
+    }
+
+    removeCoworker(userName) {
+        this.coworkers[userName].avatar.destroySprite();
+        delete this.coworkers[userName];
+
+        let streamIds = [];
+        for (const [streamId, coworkerName] of Object.entries(this.streamId2CoworkerName)) {
+            if (userName == coworkerName) {
+                streamIds.push(streamId);
+            }
+        }
+
+        for (const streamId of streamIds) {
+            delete this.streamId2CoworkerName[streamId];
+        }
     }
 
     changeActiveRoom(roomId) {
@@ -115,7 +104,9 @@ class Offices {
     }
 
     clearState() {
-        this.coworkers = {};
+        for (const [coworkerName, _] of Object.entries(this.coworkers)) {
+            this.removeCoworker(coworkerName)
+        }
         this.streamId2CoworkerName = {};
         this.activeRoom = undefined;
     }

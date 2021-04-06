@@ -13,8 +13,7 @@ class ConfiguredPeerConnection {
             }]
         };
         this.socket = socket;
-        this.conn = new RTCPeerConnection(this.configuration);
-        this.configureNegotiationHandlers();
+        this.conn = undefined;
     }
 
     configureNegotiationHandlers() {
@@ -23,17 +22,21 @@ class ConfiguredPeerConnection {
             description,
             candidate
         }) => {
-            if (description) {
-                await this.conn.setRemoteDescription(description);
-                if (description.type == "offer") {
-                    await this.conn.setLocalDescription(await this.conn.createAnswer());
-                    this.socket.emit('webrtc-message', {
-                        data: {
-                            "description": this.conn.localDescription
-                        }
-                    });
-                }
-            } else if (candidate) await this.conn.addIceCandidate(candidate);
+            try {
+                if (description) {
+                    await this.conn.setRemoteDescription(description);
+                    if (description.type == "offer") {
+                        await this.conn.setLocalDescription(await this.conn.createAnswer());
+                        this.socket.emit('webrtc-message', {
+                            data: {
+                                "description": this.conn.localDescription
+                            }
+                        });
+                    }
+                } else if (candidate) await this.conn.addIceCandidate(candidate);
+            } catch (e) {
+                console.log(e)
+            }
         })
 
         this.conn.onicecandidate = ({
@@ -67,21 +70,16 @@ class ConfiguredPeerConnection {
 
     }
 
-    configureOnTrackHandler(coworkers, streamId2CoworkerName, audioContext) {
+    configureOnTrackHandler(coworkers, streamId2CoworkerName, audioController) {
         // Signals when a new track is added.
         this.conn.ontrack = (event) => {
-
             var coworkerName = streamId2CoworkerName[event.streams[0].id];
 
-            console.log('Coworkers as seen inside TrackHandler: ', coworkers);
-            console.log('Coworker name that just added a track: ', coworkerName);
-            console.log('StreamId2CoworkerName: ', streamId2CoworkerName);
-
-            // console.log(event.streams[0].id)
-            var mediaStream = new MediaStream([event.track]);
-            var streamSource = audioContext.createMediaStreamSource(mediaStream);
+            // if we want do do more complex audio controlling, handle the next
+            // 3 lines inside the audio controller.
+            var streamSource = audioController.audioContext.createMediaStreamSource(event.streams[0]);
             streamSource.connect(coworkers[coworkerName].gainNode);
-            coworkers[coworkerName].gainNode.connect(audioContext.destination);
+            coworkers[coworkerName].gainNode.connect(audioController.audioContext.destination);
         }
     }
 
@@ -90,7 +88,21 @@ class ConfiguredPeerConnection {
     }
 
     stopTransceivers() {
-        this.conn.getTransceivers().forEach(tr => tr.stop());
+        this.conn.getTransceivers().forEach(tr => {
+            console.log(tr.direction);
+            tr.stop();
+        });
+    }
+
+    getConn() {
+        this.conn = new RTCPeerConnection(this.configuration);
+        this.configureNegotiationHandlers();
+    }
+
+    closeConnIfOpen() {
+        if (this.conn) {
+            this.conn.close();
+        }
     }
 }
 

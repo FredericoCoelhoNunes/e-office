@@ -66,7 +66,7 @@ var attachOnSuccessfulConnectionEventHandler = (peerConnection, userId) => {
 
 // Whenever a new track is received, we want to direct it to all other peers
 var attachOnTrackEventHandler = (userData, userId, roomId) => {
-    peerConnections[userId].ontrack = event => {
+    peerConnections[userId].ontrack = (event) => {
         // Adding each user's tracks to each other's peer connection's with the server.
         userNameStreamIdMatches = addTracks(roomData, userData, userId, roomId);
         // Update all users's (trackId,userId) matches
@@ -91,12 +91,6 @@ var addTracks = (roomData, userData, userId, roomId) => {
     let userNameStreamIdMatches = [];
     let streamId;
     for (const [otherUserId, otherUserData] of Object.entries(roomData[roomId])) {
-
-        // console.log('\n\n\nRoom data:', roomData);
-        // console.log('\n\n\nuserData:', userData);
-        // console.log('\n\n\notherUserData:', otherUserData);
-        // console.log('\n\n\n roomId:', roomId)
-        // console.log('\n\n\n otherUserId:', otherUserId)
 
         if (otherUserData.userName != userData.userName) {
             streamId = addUserTrackToDestinationStream(userData, otherUserData);
@@ -133,7 +127,7 @@ var addUserTrackToDestinationStream = (sourceUserData, destinationUserData) => {
             }
         );
 
-        sourceUserData.outgoingTransceivers.push(outgoingTransceiver);
+        sourceUserData.outgoingTransceivers[destinationUserData.userName] = outgoingTransceiver;
 
         return streamId
     } catch (e) {
@@ -166,17 +160,37 @@ var getCurrentCoworkers = (roomData, userId, roomId) => {
     return currentCoworkers
 }
 
-var deleteUserData = (userName, roomId) => {
+var deleteUserData = (socket, userName, roomId) => {
     socket.to(roomId).emit('coworker-left-room', userName);
-    roomData[roomId][socket.id].outgoingTransceivers.forEach(tr => tr.stop());
+    socket.leave(roomId);
+
+    for (let [_, tr] of Object.entries(roomData[roomId][socket.id].outgoingTransceivers)) {
+        tr.stop();
+    }
+
+    // deleting outgoing transceivers for other users directed at the user that is leaving
+    for (const [otherUserName, otherUserData] of Object.entries(roomData[roomId])) {
+        if (otherUserName != userName) {
+            let found = false;
+            for (let [destinationUsername, tr] of Object.entries(otherUserData.outgoingTransceivers)) {
+                if (destinationUsername == userName) {
+                    found = true;
+                    tr.stop();
+                }
+            }
+            if (found) {
+                delete otherUserData.outgoingTransceivers[userName];
+            }
+        }
+    }
+
     delete roomData[roomId][socket.id];
     delete usersCurrentRoom[socket.id];
+    delete peerConnections[socket.id];
 }
 
 // socket.io server.
 io.on('connection', socket => {
-
-    //socket.emit('current-players', players);
 
     socket.on('new-coworker', (userName, roomId, x, y) => {
         console.log(`${userName} joined. (socket id is ${socket.id})`)
@@ -184,7 +198,7 @@ io.on('connection', socket => {
         usersCurrentRoom[socket.id] = roomId;
 
         if (!(roomId in roomData)) {
-            console.log(`Empty room ${roomId}`)
+            console.log(`Empty room ${roomId}. Deleting.`)
             roomData[roomId] = {};
         }
 
@@ -193,7 +207,7 @@ io.on('connection', socket => {
             x,
             y,
             socket,
-            "outgoingTransceivers" : []
+            "outgoingTransceivers": {}
         }
 
         addPeerConnection(roomData[roomId][socket.id], socket.id, roomId);
@@ -205,13 +219,12 @@ io.on('connection', socket => {
         socket.emit('current-coworkers', currentCoworkers);
     });
 
-    socket.on('new-position', (x, y, roomId) => {
-        try {
+    socket.on('new-position', (x, y) => {
+        var roomId = usersCurrentRoom[socket.id]
+        if (roomId) {
             roomData[roomId][socket.id].x = x;
             roomData[roomId][socket.id].y = y;
             socket.to(roomId).emit('new-position', roomData[roomId][socket.id].userName, x, y);
-        } catch (e) {
-            console.log('Error: ', e);
         }
     })
 
@@ -231,18 +244,32 @@ io.on('connection', socket => {
         } else if (data.candidate && data.candidate.candidate != "") await userPeerConnection.addIceCandidate(data.candidate);
     });
 
-    socket.on('coworker-left-room', deleteUserData);
-    
+    socket.on('coworker-left-room', (userName, roomId) => deleteUserData(socket, userName, roomId));
+
     socket.on('disconnect', () => {
         roomId = usersCurrentRoom[socket.id];
         if (roomId) {
             userName = roomData[roomId][socket.id].userName;
-            deleteUserData(userName, roomId);
+            deleteUserData(socket, userName, roomId);
         }
         delete peerConnections[socket.id];
     });
-    
+
 
 })
+
+function logEverything() {
+    console.log(roomData);
+    for (const [k1, v1] of Object.entries(roomData)) {
+        for (const [k2, v2] of Object.entries(v1)) {
+            console.log(v2.outgoingTransceivers)
+            for ([userName, tr] of Object.entries(v2.outgoingTransceivers)) {
+                console.log(userName, ' -- Stopped: ', tr.stopped);
+            }
+        }
+    }
+    console.log(usersCurrentRoom);
+    console.log(peerConnections);
+}
 
 server.listen(5500);

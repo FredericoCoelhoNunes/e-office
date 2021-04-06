@@ -38,22 +38,12 @@ class OfficeController {
 
             self.person.getVoice();
 
-            self.person.createSprite(this);
-            self.person.sprite.setScale(0.2);
+            self.person.avatar.createSpriteWithPhysics(this, 200, 200);
             self.person.sprite.setCollideWorldBounds(true);
 
-            self.person.peerConnection.configureOnTrackHandler(
-                self.office.coworkers,
-                self.office.streamId2CoworkerName,
-                self.office.audioContext
-            );
-
-            console.log('Creating...', self);
             self.cursors = this.input.keyboard.createCursorKeys();
 
             self.person.joinRoom(self.office, self.office.defaultRoom);
-            self.person.sendVoice();
-
         }
 
         return create
@@ -61,7 +51,8 @@ class OfficeController {
 
     getPreloadFunction() {
         function preload() {
-            this.load.image('person', 'assets/person.png');
+            const [spriteName, fileName] = self.person.avatar.getSpriteDetails();
+            this.load.image(spriteName, fileName);
         }
 
         return preload
@@ -89,10 +80,10 @@ class OfficeController {
             var y = self.person.sprite.y;
             // var r = this.player.rotation;
 
-            if (self.oldPosition === undefined || (self.office.getDistance(self.oldPosition.x, self.oldPosition.y, x, y) > 10)) {
+            if (self.oldPosition === undefined || (self.office.audioController.getDistance(self.oldPosition.x, self.oldPosition.y, x, y) > 10)) {
 
                 for (let [coworkerName, data] of Object.entries(self.office.coworkers)) {
-                    self.office.updateGain(coworkerName, data.sprite.x, data.sprite.y);
+                    self.office.updateGain(coworkerName, data.avatar.x, data.avatar.y);
                 }
 
                 self.oldPosition = {

@@ -11,6 +11,11 @@ socket;
 
 */
 
+
+
+import {
+    Avatar
+} from './Avatar.js';
 import {
     ConfiguredPeerConnection
 } from './ConfiguredPeerConnection.js';
@@ -19,21 +24,14 @@ import {
 class Person {
     constructor(userName, socket) {
         this.userName = userName;
-        this.sprite = undefined;
+        this.avatar = new Avatar("person", "assets/person.png");
         this.socket = socket;
 
-        this.peerConnection = new ConfiguredPeerConnection(
-            socket
-        );
+        this.peerConnection = new ConfiguredPeerConnection(this.socket);
     }
 
-    getAvatarFilename() {
-        console.log("Getting avatar...")
-        return "assets/person.png"
-    }
-
-    createSprite(phaserGame) {
-        this.sprite = phaserGame.physics.add.image(400, 300, 'person')
+    get sprite() {
+        return this.avatar.sprite;
     }
 
     getVoice() {
@@ -53,29 +51,36 @@ class Person {
     }
 
     joinRoom(office, roomId) {
-        this.peerConnection.configureOnTrackHandler();
-        office.setActiveRoom(roomId);
+        office.changeActiveRoom(roomId);
+
+        this.peerConnection.closeConnIfOpen();
+        this.peerConnection.getConn();
+
+        this.peerConnection.configureOnTrackHandler(
+            self.office.coworkers,
+            self.office.streamId2CoworkerName,
+            self.office.audioController
+        );
 
         this.socket.emit(
             'new-coworker',
             this.userName,
             roomId,
-            this.sprite.x,
-            this.sprite.y
+            this.avatar.x,
+            this.avatar.y
         );
+
+        this.sendVoice();
     }
 
     leaveRoom(office, roomId) {
-        this.socket.leave(roomId);
         this.socket.emit('coworker-left-room', this.userName, roomId);
         office.clearState();
         this.peerConnection.stopTransceivers();
-
-
     }
 
     emitNewPosition(x, y) {
-        this.socket.emit('new-position', x, y, this.activeRoom);
+        this.socket.emit('new-position', x, y);
     }
 }
 
