@@ -1,10 +1,22 @@
+/**
+Defines the Phaser Game loop in which the Person and Office (which contains
+the coworkers) will interact, to bring the e-office to life.
+**/
 class OfficeController {
 
+    /**
+     * @param {!office} Office the person corresponding to the local user.
+     * @param {!person} Person the office that the person connects to.
+     */
     constructor(office, person) {
         this.office = office
         this.person = person
         this.old_position = undefined
 
+        // This config defines the Phaser game, which in turn is defined by a
+        // scene with 3 stages - preload (to load the sprites), create (to set
+        // up the different classes), and update (to continously render the
+        // office and users' Avatars)
         this.config = {
             type: Phaser.AUTO,
             parent: 'phaser-example',
@@ -25,12 +37,18 @@ class OfficeController {
         this.game = new Phaser.Game(this.config);
     }
 
+    /**
+     * Gets the scene "create" handler. It follows these steps:
+     *      - configures the office event handlers;
+     *      - gets access to the user's microphone;
+     *      - renders the user's avatar
+     *      - configures the keyboard movement input
+     *      - the person joins the office default room
+     *      - the person sends its voice track, which triggers WebRTC
+     *        negotiation.
+     * @return {Function} the create handler.
+     */
     getCreateFunction() {
-        /* 
-        Gets the scene "create" handler, with reference to the office controller.
-        This was we can create new office controller by just overriding one or more of
-        getCreate, getPreload, or getUpdate
-         */
         self = this;
 
         function create() {
@@ -50,6 +68,10 @@ class OfficeController {
         return create
     }
 
+    /**
+     * Gets the scene "preload" handler. Loads all relevant sprites.
+     * @return {Function} the preload handler.
+     */
     getPreloadFunction() {
         function preload() {
             const [spriteName, fileName] = self.person.avatar.getSpriteDetails();
@@ -59,6 +81,13 @@ class OfficeController {
         return preload
     }
 
+    /**
+     * Gets the scene "update" handler. It follows these steps:
+     *      - updates user position based on input.
+     *      - every 10 units updates relative gains for coworkers, and emits
+     *        the new position to the server.
+     * @return {Function} the update handler.
+     */
     getUpdateFunction() {
         self = this;
 

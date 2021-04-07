@@ -1,3 +1,8 @@
+/**
+ * Main file - instantiates Person, Office, and OfficeController, which kicks
+ * off the "game" loop.
+ */
+
 import {
     Person
 } from './Person.js';
