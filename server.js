@@ -1,6 +1,3 @@
-const {
-    SSL_OP_NO_TICKET
-} = require('constants');
 const express = require('express');
 const app = express();
 const server = require('http').Server(app);
@@ -10,12 +7,12 @@ const wrtc = require("wrtc");
 app.set('view engine', 'ejs');
 app.use(express.static("public"))
 
-// To store info about players that joined
-let roomData = {};
-let usersCurrentRoom = {}; // just a helper variable to keep track of users current rooms.
-let peerConnections = {};
+// To store info about users that joined
+let roomData = {}; // information for users in each room.
+let usersCurrentRoom = {}; // helper variable to keep track of users' current room.
+let peerConnections = {}; // stores currently opened WebRTC peer connections.
 
-// STUN server configuration
+// Configuration of the STUN server used to get WebRTC ICE candidates.
 const configuration = {
     'iceServers': [{
         'urls': [
@@ -25,7 +22,7 @@ const configuration = {
 };
 
 
-// Renders a office.
+// Route for each office.
 app.get('/:office', (req, res) => {
     res.render('office.ejs', {
         office: req.params.office
@@ -33,7 +30,12 @@ app.get('/:office', (req, res) => {
 })
 
 
-// Function to add a new peer connection with a client.
+/**
+ * Adds a peerConnection for a user that joined, and configures all handlers.
+ * @param {!userData} object the user's data, contained in roomData[userId].
+ * @param {!userId} string the user's unique ID for this session (socket.id).
+ * @param {!roomId} number the id of the room the user is connected to.
+ */
 var addPeerConnection = (userData, userId, roomId) => {
     console.log(`Adding peer connection for user ${userData.userName}`);
     peerConnections[userId] = new wrtc.RTCPeerConnection(configuration);
@@ -45,7 +47,11 @@ var addPeerConnection = (userData, userId, roomId) => {
 };
 
 
-// Attaches event handler for the onicecandidate event
+/**
+ * Attaches event handler for the onicecandidate event to a peer connection.
+ * @param {!peerConnection} wrtc.RTCPeerConnection A Web RTC peer connection.
+ * @param {!socket} socket A socket.io socket.
+ */
 var attachOnIceCandidateEventHandler = (peerConnection, socket) => {
     peerConnection.onicecandidate = ({
         candidate
@@ -55,7 +61,12 @@ var attachOnIceCandidateEventHandler = (peerConnection, socket) => {
 }
 
 
-// Connection successful
+/**
+ * Attaches event handler for the successful connection event to a peer
+ * connection.
+ * @param {!peerConnection} wrtc.RTCPeerConnection A Web RTC peer connection.
+ * @param {!userId} number the user unique ID for this session (socket.id)
+ */
 var attachOnSuccessfulConnectionEventHandler = (peerConnection, userId) => {
     peerConnection.oniceconnectionstatechange = event => {
         if (peerConnection.iceConnectionState === 'connected') {
@@ -64,6 +75,19 @@ var attachOnSuccessfulConnectionEventHandler = (peerConnection, userId) => {
     }
 };
 
+/**
+ * Used when a new track arrives from a user. Steps:
+ *      - takes the incoming track, and for each other user in the room, creates
+ *        a stream and adds it to their peer connection.
+ *      - takes the tracks for all other users in the room, and adds it to the
+ *        new user's peer connection.
+ *      - sends updates to the clients for all the new (userName, streamId)
+ *        matches.
+ * @param {!roomData} object data for all users in the room.
+ * @param {!userData} object data for the new user.
+ * @param {!userId} number the user unique ID for this session (socket.id)
+ * @param {!roomId} roomId the room that the user just joined.
+ */
 var addTracksAndUpdateUserNameStreamIdMatches = (roomData, userData, userId, roomId) => {
     // Adding each user's tracks to each other's peer connection's with the server.
     userNameStreamIdMatches = addTracks(roomData, userData, userId, roomId);
@@ -71,7 +95,13 @@ var addTracksAndUpdateUserNameStreamIdMatches = (roomData, userData, userId, roo
     updateUserNameStreamIdMatches(roomId, userNameStreamIdMatches);
 }
 
-// Whenever a new track is received, we want to direct it to all other peers
+/**
+ * Attaches on track event handler - what to do when a new track arrives - to a
+ * user's peer connection.
+ * @param {!userData} object data for the new user.
+ * @param {!userId} number the user unique ID for this session (socket.id)
+ * @param {!roomId} roomId the room that the user just joined.
+ */
 var attachOnTrackEventHandler = (userData, userId, roomId) => {
     peerConnections[userId].ontrack = (event) => {
         addTracksAndUpdateUserNameStreamIdMatches(roomData, userData, userId, roomId);
@@ -79,8 +109,15 @@ var attachOnTrackEventHandler = (userData, userId, roomId) => {
 
 }
 
-// Update all matches of (userId, transceiverMid). Can't use trackId as it is not the same on both ends.
-// Transciever Mid seems to be guaranteed to keep the order in which it was added.
+/**
+ * Emits new matches of (streamId, sourceUserId) that were created when new
+ * tracks were added to the different peer connections, for all users in a room.
+ * @param {!roomId} number the ID of the room.
+ * @param {!userIdStreamIdMatches} array an array of objects with keys userId 
+ *      (the user the needs to be informed that a certain stream ID belongs to
+ *       a specific coworker), sourceUser (the userName of the coworker), and
+ *      streamId (the ID of the stream that the user will receive). 
+ */
 var updateUserNameStreamIdMatches = (roomId, userIdStreamIdMatches) => {
     for (var {
             userId,
@@ -91,7 +128,15 @@ var updateUserNameStreamIdMatches = (roomId, userIdStreamIdMatches) => {
     }
 };
 
-// Adds every other user's tracks to a new user, and vice versa (for users in the same room)
+/**
+ * Adds every other user's tracks to a new user's peerConnection, and vice
+ * versa, for all users in the same room. Keeps a record of all new
+ * (userName, streamId matches that were formed).
+ * @param {!roomData} object data for all users in the room.
+ * @param {!userData} object data for the new user.
+ * @param {!userId} number the user unique ID for this session (socket.id)
+ * @param {!roomId} roomId the room that the user just joined.
+ */
 var addTracks = (roomData, userData, userId, roomId) => {
     let userNameStreamIdMatches = [];
     let streamId;
@@ -115,18 +160,27 @@ var addTracks = (roomData, userData, userId, roomId) => {
     }
     return userNameStreamIdMatches
 }
-// The actual function logic that adds a user's track to another user's stream.
-// Also sends a notification to the user with (trackId, sourceUser) so the volume can be tuned on client-side
+
+/**
+ * The actual function logic that adds a user's track to another user's peer
+ * connection.
+ * @param {!roomData} object data for all users in the room.
+ * @param {!userData} object data for the new user.
+ * @param {!userId} number the user unique ID for this session (socket.id)
+ * @param {!roomId} roomId the room that the user just joined.
+ */
 var addUserTrackToDestinationStream = (sourceUserData, destinationUserData) => {
     console.log(`Adding user ${sourceUserData.userName}'s track to user ${destinationUserData.userName}'s stream.`)
     try {
         var stream = new wrtc.MediaStream();
         var streamId = stream.id;
 
-        // TODO: Not sure if this is a good way to do it, but I am trying to force each track to be on an individual stream.
-        // This is because stream.id was the ONLY id I could find that is common between peers.
-        // If there's a way to do this with addTrack only, would be better.
-        outgoingTransceiver = peerConnections[destinationUserData.socket.id].addTransceiver(
+        // TODO: Not sure if this is a good way to do it, but I forcing each
+        // track to be on an individual stream. This is because stream.id was
+        // the ONLY id I could find that is common on both ends of the
+        // connection, which allows us to match sound with user on the
+        // receiving client-side.
+        var outgoingTransceiver = peerConnections[destinationUserData.socket.id].addTransceiver(
             peerConnections[sourceUserData.socket.id].getReceivers()[0].track, {
                 streams: [stream]
             }
@@ -140,7 +194,11 @@ var addUserTrackToDestinationStream = (sourceUserData, destinationUserData) => {
     }
 };
 
-// Handles renegotiation (necessary every time a track is added)
+/**
+ * Attaches WebRTC renegotiation event handler to a user's peer connection.
+ * @param {!peerConnection} wrtc.RTCPeerConnection A Web RTC peer connection.
+ * @param {!socket} socket A socket.io socket.
+ */
 var attachNegotiationEventHandler = async (peerConnection, socket) => {
     peerConnection.onnegotiationneeded = async () => {
         await peerConnection.setLocalDescription(await peerConnection.createOffer());
@@ -150,6 +208,12 @@ var attachNegotiationEventHandler = async (peerConnection, socket) => {
     }
 };
 
+/**
+ * Gets information about a user's current coworkers from it's room's data.
+ * @param {!roomData} object data for all users in the room.
+ * @param {!userId} number the user unique ID for this session (socket.id)
+ * @param {!roomId} roomId the room that the user just joined.
+ */
 var getCurrentCoworkers = (roomData, userId, roomId) => {
     let currentCoworkers = {};
     for (const [otherUserId, userData] of Object.entries(roomData[roomId])) {
@@ -165,6 +229,13 @@ var getCurrentCoworkers = (roomData, userId, roomId) => {
     return currentCoworkers
 }
 
+/**
+ * Deletes a user's data from the stream. Only deletes ephemeral data (not the 
+ * peerConnection, for example, as we want to re-use it between rooms)
+ * @param {!socket} socket A socket.io socket.
+ * @param {!userName} string the user's name.
+ * @param {!roomId} roomId the room that the user just joined.
+ */
 var deleteUserData = (socket, userName, roomId) => {
     socket.to(roomId).emit('coworker-left-room', userName);
     socket.leave(roomId);
@@ -193,9 +264,20 @@ var deleteUserData = (socket, userName, roomId) => {
     delete usersCurrentRoom[socket.id];
 }
 
-// socket.io server.
+// The socket.io signalling server.
 io.on('connection', socket => {
 
+    // What to do when a new coworker joins a room:
+    //  - take note of it's current room.
+    //  - create room data object if it doesn't exist.
+    //  - add user data.
+    //  - add peer connection for the user if it doesn't exist (i.e. if user
+    //    is just now connecting and not only switching rooms)
+    //  - emit "new-coworker" to other people in the room
+    //  - emit all coworkers' information to the newly joined user.
+    //  - if user had already sent in its audio track (i.e. if he had previously
+    //    been connected to another room in this session)) simply run the track 
+    //    "redistribution" function
     socket.on('new-coworker', (userName, roomId, x, y) => {
         console.log(`${userName} joined. (socket id is ${socket.id})`)
         socket.join(roomId);
@@ -242,6 +324,7 @@ io.on('connection', socket => {
         }
     });
 
+    // Inform other users in a room of a coworker's new position.
     socket.on('new-position', (x, y) => {
         var roomId = usersCurrentRoom[socket.id]
         if (roomId) {
@@ -251,7 +334,7 @@ io.on('connection', socket => {
         }
     })
 
-    // Connecting to client
+    // WebRTC offer/answer/incoming ICE candidate handling.
     socket.on('webrtc-message', async ({
         data
     }) => {
@@ -267,6 +350,7 @@ io.on('connection', socket => {
         } else if (data.candidate && data.candidate.candidate != "") await userPeerConnection.addIceCandidate(data.candidate);
     });
 
+    // When a user leaves a room, delete its data and inform its coworkers.
     socket.on('coworker-left-room', (userName, roomId) => deleteUserData(socket, userName, roomId));
 
     socket.on('disconnect', () => {
